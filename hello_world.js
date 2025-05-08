@@ -9,19 +9,12 @@ looker.plugins.visualizations.add({
     }
   },
 
-  create(element, config) {
+  create(element) {
     element.innerHTML = `
       <style>
-        .tooltip {
-          position: absolute;
-          padding: 6px 10px;
-          font: 12px sans-serif;
-          background: rgba(0,0,0,0.7);
-          color: #fff;
-          border-radius: 4px;
-          pointer-events: none;
-          opacity: 0;
-        }
+        .tooltip { position: absolute; padding: 6px 10px; font: 12px sans-serif;
+                   background: rgba(0,0,0,0.7); color: #fff; border-radius: 4px;
+                   pointer-events: none; opacity: 0; }
       </style>
       <div class="tooltip"></div>
     `;
@@ -36,10 +29,8 @@ looker.plugins.visualizations.add({
   },
 
   _initSvg(element) {
-    this._svg = d3.select(element)
-      .append('svg')
-      .style('width', '100%')
-      .style('height', '100%');
+    this._svg = d3.select(element).append('svg')
+                   .style('width','100%').style('height','100%');
     this._tooltip = d3.select(element).select('.tooltip');
   },
 
@@ -55,71 +46,51 @@ looker.plugins.visualizations.add({
     const dim = queryResponse.fields.dimensions[0].name;
     const perf = queryResponse.fields.measures[0].name;
     const growth = queryResponse.fields.measures[1].name;
-    const globalTarget = Number(config.target_value) || 0;
+    const target = Number(config.target_value) || 0;
 
     const pts = data.map(d => ({
       label: d[dim].value,
       performance: +d[perf].value,
       growth: +d[growth].value
     })).filter(d => d.label && isFinite(d.performance) && isFinite(d.growth));
+    if (!pts.length) { this.addError({ title:'No Data', message:'No valid rows.' }); return done(); }
 
-    if (!pts.length) {
-      this.addError({ title: 'No Data', message: 'No valid rows.' });
-      return done();
-    }
+    const width = element.clientWidth, height = element.clientHeight;
+    const margin = 40, radius = Math.min(width, height)/2 - margin;
+    const svg = this._svg.attr('width', width).attr('height', height);
+    const g = svg.append('g').attr('transform', `translate(${width/2},${height/2})`);
 
-    const width = element.clientWidth;
-    const height = element.clientHeight;
-    const margin = 40;
-    const radius = Math.min(width, height) / 2 - margin;
-
-    const g = this._svg
-      .attr('width', width)
-      .attr('height', height)
-      .append('g')
-      .attr('transform', `translate(${width/2},${height/2})`);
-
-    const maxPerf = d3.max(pts, d => d.performance);
-    const maxVal = Math.max(maxPerf, globalTarget);
+    // scales
+    const maxPerf = d3.max(pts, d=>d.performance), maxVal = Math.max(maxPerf, target);
     const rScale = d3.scaleLinear().domain([0, maxVal]).range([0, radius]);
 
-    const pie = d3.pie()
-      .value(d => d.growth)
-      .sort((a, b) => d3.ascending(a.label, b.label));
+    // pie for growth as angle
+    const pie = d3.pie().value(d=>d.growth).sort((a,b)=>d3.ascending(a.label,b.label));
     const arcs = pie(pts);
 
-    const arcGen = d3.arc()
-      .innerRadius(0)
-      .outerRadius(d => rScale(d.data.performance))
-      .padAngle(0.3)
-      .padRadius(0);
+    // arc generator with spacing
+    const arcGen = d3.arc().innerRadius(0)
+      .outerRadius(d=>rScale(d.data.performance))
+      .padAngle(0.2).padRadius(0);
 
+    // draw segments
     g.selectAll('path')
       .data(arcs)
       .enter().append('path')
-      .attr('d', d => arcGen({
-        startAngle: d.startAngle,
-        endAngle: d.endAngle,
-        data: d.data
-      }))
-      .style('fill', d => d.data.performance < globalTarget ? '#8cc540' : '#0070bb')
-      .on('mouseover', (event, d) => {
-        this._tooltip
-          .style('opacity', 1)
-          .html(`<strong>${d.data.label}</strong><br/>Performance: ${d.data.performance}<br/>Growth: ${d.data.growth}<br/>Target: ${globalTarget}`)
-          .style('left', (event.pageX + 5) + 'px')
-          .style('top', (event.pageY - 28) + 'px');
-      })
-      .on('mouseout', () => this._tooltip.style('opacity', 0));
+      .attr('d', arcGen)
+      .style('fill', d=>d.data.performance < target ? '#8cc540' : '#0070bb')
+      .on('mouseover', (e,d)=>{
+        this._tooltip.style('opacity',1)
+          .html(`<strong>${d.data.label}</strong><br/>Perf: ${d.data.performance}<br/>Growth: ${d.data.growth}<br/>Target: ${target}`)
+          .style('left', (e.pageX+5)+'px').style('top', (e.pageY-28)+'px');
+      }).on('mouseout', ()=>this._tooltip.style('opacity',0));
 
-    // target circle
+    // target ring
     g.append('circle')
-      .attr('r', rScale(globalTarget))
-      .style('fill', 'none')
-      .style('stroke', '#999')
-      .style('stroke-width', 4)
-      .style('opacity', .8);
+      .attr('r', rScale(target))
+      .style('fill','none').style('stroke','#999').style('stroke-width',2).style('opacity',0.5);
 
+    // labels outside arcs, always horizontal
     const labelOffset = 20;
     g.selectAll('.label')
       .data(arcs).enter().append('text')
