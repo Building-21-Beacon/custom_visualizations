@@ -120,7 +120,7 @@ looker.plugins.visualizations.add({
       .attr('fill', (d,i) => color(i))
       .on('mouseover', (e,d) => {
         console.log(d)
-        console.log(d.data)
+        console.log(e)
         this._tooltip
           .style('opacity', 1)
           .html(`
