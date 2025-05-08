@@ -1,6 +1,6 @@
 looker.plugins.visualizations.add({
-  id: "perf_growth_radial",
-  label: "Performance-Growth Radial",
+  id: "stacked_radial_bars",
+  label: "Stacked Radial Bars",
   options: {},
 
   create(element, config) {
@@ -21,7 +21,6 @@ looker.plugins.visualizations.add({
       </style>
       <div class="tooltip"></div>
     `;
-    // load D3
     if (typeof d3 === 'undefined') {
       const s = document.createElement('script');
       s.src = 'https://d3js.org/d3.v5.min.js';
@@ -52,7 +51,7 @@ looker.plugins.visualizations.add({
         queryResponse.fields.measures.length < 2) {
       this.addError({
         title: "Missing Fields",
-        message: "Requires 1 dimension + 2 measures: Performance, Growth."
+        message: "Requires 1 dimension + 2 measures: Area, Performance, Growth."
       });
       return done();
     }
@@ -61,34 +60,29 @@ looker.plugins.visualizations.add({
     const perfName = queryResponse.fields.measures[0].name;
     const growthName = queryResponse.fields.measures[1].name;
 
-    // normalize
     const pts = data
       .map(d => ({
-        area:      d[dimName]?.value,
+        area: d[dimName]?.value,
         performance: +d[perfName]?.value,
-        growth:      +d[growthName]?.value
+        growth: +d[growthName]?.value
       }))
       .filter(d => d.area && !isNaN(d.performance) && !isNaN(d.growth));
 
-    console.log(pts)
+    console.log(pts);
 
     if (pts.length === 0) {
       this.addError({ title: "No Data", message: "No valid rows." });
       return done();
     }
 
-    // measure ranges
-    const totalPerf = d3.sum(pts, d => d.performance);
-    const maxGrowth  = d3.max(pts, d => d.growth);
+    // Prepare data: group by area
+    const areas = d3.groups(pts, d => d.area);
 
-    // size
     const w = element.clientWidth;
     const h = element.clientHeight;
-    const R = Math.min(w, h) / 2;
-    const innerR = R * 0.1;         // small hole in center
-    const outerMax = R * 0.9;       // leave 10% margin
+    const outerRadius = Math.min(w, h) / 2;
+    const ringWidth = outerRadius / (areas.length + 1);  // +1 for padding
 
-    // clear + resize
     this._svg.selectAll('*').remove();
     this._svg.attr('width', w).attr('height', h);
 
@@ -96,66 +90,60 @@ looker.plugins.visualizations.add({
       .append('g')
       .attr('transform', `translate(${w/2},${h/2})`);
 
-    // pie: angle ∝ performance
-    const pie = d3.pie()
-      .value(d => d.performance)
-      .sort(null);
-
-    // arc: radius ∝ growth
-    const arc = d3.arc()
-      .innerRadius(innerR)
-      .outerRadius(d => innerR + (d.data.growth / maxGrowth) * (outerMax - innerR));
-
     const color = d3.scaleOrdinal(d3.schemeCategory10);
 
-    // bind slices
-    const slices = g.selectAll('g.slice')
-      .data(pie(pts))
-      .enter()
-      .append('g')
-      .attr('class', 'slice');
+    // Draw each ring (one ring per area)
+    areas.forEach(([areaName, values], areaIndex) => {
+      const innerR = ringWidth * areaIndex;
+      const outerR = innerR + ringWidth * 0.9;  // 10% padding inside each ring
 
-    // draw
-    slices.append('path')
-      .attr('d', arc)
-      .attr('fill', (d,i) => color(i))
-      .attr('stroke', '#fff')       // <-- add this
-      .attr('stroke-width', '1px') 
-      .on('mouseover', (d,e) => {
-        console.log(d)
-        console.log(e)
-        this._tooltip
-          .style('opacity', 1)
-          .html(`
-            <strong>${d.data.area}</strong><br/>
-            Perf: ${d.data.performance}<br/>
-            Growth: ${d.data.growth}
-          `)
-          .style('left', (e.pageX+5)+'px')
-          .style('top', (e.pageY-28)+'px');
-      })
-      .on('mouseout', () => this._tooltip.style('opacity', 0));
+      const totalGrowth = d3.sum(values, d => d.growth);
 
-    // labels at mid‐radius of each slice
-    slices.append('text')
-      .attr('transform', d => {
-        // compute mid‐angle centroid
-        const c = arc.centroid(d);
-        return `translate(${c[0]},${c[1]})`;
-      })
-      .attr('text-anchor', 'middle')
-      .attr('dy', '0.35em')
-      .style('font-size', '18px')
-      .style('fill', '#fff')
-      .style('word-wrap', 'break-word')
-      .html(`
-            <strong>${d.data.area}</strong><br/>
-            Perf: ${d.data.performance}<br/>
-            Growth: ${d.data.growth}
-          `);
-    
+      const pie = d3.pie()
+        .value(d => d.growth)
+        .sort(null);
 
-    console.log("✅ Rendered Perf-Growth radial chart");
+      const arc = d3.arc()
+        .innerRadius(innerR)
+        .outerRadius(outerR);
+
+      const slices = g.selectAll(`.slice-${areaIndex}`)
+        .data(pie(values))
+        .enter()
+        .append('g')
+        .attr('class', `slice-${areaIndex}`);
+
+      slices.append('path')
+        .attr('d', arc)
+        .attr('fill', (d, i) => color(i))
+        .attr('stroke', '#fff')
+        .attr('stroke-width', '1px')
+        .on('mouseover', (d, e) => {
+          this._tooltip
+            .style('opacity', 1)
+            .html(`
+              <strong>${d.data.area}</strong><br/>
+              Perf: ${d.data.performance}<br/>
+              Growth: ${d.data.growth}
+            `)
+            .style('left', (e.pageX + 5) + 'px')
+            .style('top', (e.pageY - 28) + 'px');
+        })
+        .on('mouseout', () => this._tooltip.style('opacity', 0));
+
+      // Add area label in the middle of the ring
+      g.append('text')
+        .attr('text-anchor', 'middle')
+        .attr('dy', '.35em')
+        .attr('x', 0)
+        .attr('y', -innerR - ringWidth / 2)
+        .text(areaName)
+        .style('fill', '#333')
+        .style('font-size', '12px');
+    });
+
+    console.log("✅ Rendered Stacked Radial Bars");
     done();
   }
 });
+
