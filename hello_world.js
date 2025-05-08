@@ -61,7 +61,7 @@ looker.plugins.visualizations.add({
       label: d[dim].value,
       performance: +d[perf].value,
       growth: +d[growth].value
-    })).filter(d => d.label && !isNaN(d.performance) && !isNaN(d.growth));
+    })).filter(d => d.label && !isFinite(d.performance) === false && !isFinite(d.growth) === false);
 
     if (!pts.length) {
       this.addError({ title: 'No Data', message: 'No valid rows.' });
@@ -73,48 +73,40 @@ looker.plugins.visualizations.add({
     const margin = 40;
     const radius = Math.min(width, height) / 2 - margin;
 
+    // group container
     const g = this._svg
       .attr('width', width)
       .attr('height', height)
       .append('g')
       .attr('transform', `translate(${width/2},${height/2})`);
 
-    // angular scale
-    const x = d3.scaleBand()
-      .domain(pts.map(d => d.label))
-      .range([0, 2 * Math.PI])
-      .padding(0.05);
-
-    // radial scale
+    // scale radial by performance
     const maxPerf = d3.max(pts, d => d.performance);
     const maxVal = Math.max(maxPerf, globalTarget);
     const rScale = d3.scaleLinear().domain([0, maxVal]).range([0, radius]);
 
-    // thickness scale for growth
-    const minG = d3.min(pts, d => d.growth);
-    const maxG = d3.max(pts, d => d.growth);
-    const thickness = d3.scaleLinear().domain([minG, maxG]).range([5, radius * 0.1]);
-
-    const pie = d3.pie().value(() => 1).sort((a, b) => x(a.label) - x(b.label));
+    // color scale stays constant: above vs below target
+    
+    // prepare pie: angle proportional to growth
+    const pie = d3.pie()
+      .value(d => d.growth)
+      .sort((a, b) => d3.ascending(a.label, b.label));
     const arcs = pie(pts);
 
-    // draw arcs: thickness=growth, color based on target
-    g.selectAll('.perf')
+    // arc generator: radial bars
+    const arcGen = d3.arc()
+      .innerRadius(0)
+      .outerRadius(d => rScale(d.data.performance))
+      .startAngle(d => d.startAngle)
+      .endAngle(d => d.endAngle)
+      .padAngle(0.02)
+      .padRadius(0);
+
+    // draw segments
+    g.selectAll('path')
       .data(arcs)
       .enter().append('path')
-      .attr('class', 'perf')
-      .attr('d', d => {
-        const pR = rScale(d.data.performance);
-        const t = thickness(d.data.growth);
-        const inner = Math.max(0, pR - t/2);
-        const outer = pR + t/2;
-        return d3.arc()
-          .innerRadius(inner)
-          .outerRadius(outer)
-          .startAngle(x(d.data.label))
-          .endAngle(x(d.data.label) + x.bandwidth())
-          .padAngle(0.01)();
-      })
+      .attr('d', arcGen)
       .style('fill', d => d.data.performance < globalTarget ? '#8cc540' : '#0070bb')
       .on('mouseover', (event, d) => {
         this._tooltip
@@ -125,29 +117,22 @@ looker.plugins.visualizations.add({
       })
       .on('mouseout', () => this._tooltip.style('opacity', 0));
 
-    // global target ring
-    g.append('path')
-      .attr('class', 'target')
-      .attr('d', d3.arc()
-        .innerRadius(rScale(globalTarget) - 1)
-        .outerRadius(rScale(globalTarget) + 1)
-        .startAngle(0)
-        .endAngle(2 * Math.PI)
-      )
+    // draw global target circle
+    g.append('circle')
+      .attr('r', rScale(globalTarget))
       .style('fill', 'none')
       .style('stroke', '#999')
       .style('stroke-width', 2)
       .style('opacity', 0.5);
 
-    // labels inside arcs
-    g.selectAll('.label')
+    // labels at mid-angle and mid-radius
+    g.selectAll('text')
       .data(arcs)
       .enter().append('text')
-      .attr('class', 'label')
       .attr('transform', d => {
-        const pR = rScale(d.data.performance);
-        const angle = x(d.data.label) + x.bandwidth()/2 - Math.PI/2;
-        return `rotate(${angle * 180 / Math.PI}) translate(${pR},0)`;
+        const angle = (d.startAngle + d.endAngle) / 2 - Math.PI/2;
+        const r = rScale(d.data.performance) / 2;
+        return `rotate(${angle * 180 / Math.PI}) translate(${r},0)`;
       })
       .attr('text-anchor', 'middle')
       .attr('dy', '0.35em')
@@ -158,3 +143,4 @@ looker.plugins.visualizations.add({
     done();
   }
 });
+
