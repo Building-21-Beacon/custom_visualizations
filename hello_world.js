@@ -1,144 +1,166 @@
 looker.plugins.visualizations.add({
-  id: "aster_plot",
-  label: "Aster Plot",
-  options: {
-    minRadius: {
-      type: "number",
-      label: "Minimum Radius",
-      default: 30
-    },
-    maxRadius: {
-      type: "number",
-      label: "Maximum Radius",
-      default: 100
-    },
-    color: {
-      type: "string",
-      label: "Bar Color",
-      default: "#4CAF50"
-    }
-  },
+  id: "circular_performance_plot",
+  label: "Circular Performance Plot",
+  options: {},
+
   create: function(element, config) {
-    this.addScript("https://d3js.org/d3.v5.min.js")
-    .then(() => {
-      console.log("D3 loaded:", d3.version);
+    console.log("🚀 Viz create called.");
+
+    // Inject a style tag
     element.innerHTML = `
       <style>
-          .aster-plot {
-            width: 100%;
-            height: 100%;
-          }
-          .tooltip {
-            position: absolute;
-            text-align: center;
-            padding: 6px;
-            font: 12px sans-serif;
-            background: lightsteelblue;
-            border: 0px;
-            border-radius: 8px;
-            pointer-events: none;
-            opacity: 0;
-          }
-        </style>
-      `;
-    this._container = d3.select(element)
-        .append("div")
-        .attr("class", "aster-plot");
+        .aster-plot {
+          width: 100%;
+          height: 100%;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+        }
+        .tooltip {
+          position: absolute;
+          text-align: center;
+          padding: 6px;
+          font: 12px sans-serif;
+          background: lightsteelblue;
+          border: 0px;
+          border-radius: 8px;
+          pointer-events: none;
+          opacity: 0;
+        }
+      </style>
+    `;
 
-      this._svg = d3.select(element).select(".aster-plot")
-        .append("svg")
-        .attr("width", "100%")
-        .attr("height", "100%")
-        .style("min-height", "400px");  // Important: ensure visible size
-
-      // Tooltip
-      this._tooltip = d3.select(element).append("div")
-        .attr("class", "tooltip");
-    });
+    // Load D3 if it's not present
+    if (typeof d3 === 'undefined') {
+      console.log("📦 D3 not found. Loading...");
+      const script = document.createElement('script');
+      script.src = 'https://d3js.org/d3.v5.min.js';
+      script.onload = () => {
+        console.log("✅ D3 loaded successfully.");
+        this._setup(element);
+      };
+      script.onerror = () => {
+        console.error("❌ Failed to load D3!");
+      };
+      document.head.appendChild(script);
+    } else {
+      console.log("✅ D3 is already loaded.");
+      this._setup(element);
+    }
   },
+
+  _setup: function(element) {
+    console.log("🔧 Setting up SVG and containers.");
+    this._container = d3.select(element)
+      .append("div")
+      .attr("class", "aster-plot");
+
+    this._svg = this._container
+      .append("svg")
+      .attr("width", "100%")
+      .attr("height", "100%")
+      .style("min-height", "400px");
+
+    this._tooltip = d3.select(element).append("div")
+      .attr("class", "tooltip");
+  },
+
   updateAsync: function(data, element, config, queryResponse, details, done) {
-    if (typeof d3 === "undefined") {
-      console.warn("D3 not yet loaded, skipping render");
+    if (typeof d3 === 'undefined') {
+      console.warn("⚠️ D3 is not loaded yet. Skipping update.");
       done();
       return;
     }
-    this.clearErrors();
 
-    if (queryResponse.fields.dimensions.length === 0 || queryResponse.fields.measures.length === 0) {
+    console.log("🔄 updateAsync called.");
+    console.log("📊 Data received:", data);
+    console.log("🧾 queryResponse:", queryResponse);
+
+    // Basic data validation
+    if (queryResponse.fields.dimensions.length < 2) {
       this.addError({
-        title: "Missing Fields",
-        message: "This chart requires at least one dimension and one measure."
+        title: "Invalid Data",
+        message: "This chart requires at least 2 dimensions: Area and Value."
       });
+      console.error("❌ Not enough dimensions.");
+      done();
       return;
     }
 
-    const width = element.clientWidth;
-    const height = element.clientHeight;
-    const radius = Math.min(width, height) / 2;
-    const minRadius = config.minRadius || 30;
-    const maxRadius = config.maxRadius || radius - 20;
-    const color = config.color || "#4CAF50";
+    // Prepare data: assume 1st dim = Area, 2nd dim = Value
+    const areaDim = queryResponse.fields.dimensions[0].name;
+    const valueDim = queryResponse.fields.dimensions[1].name;
 
-    const svg = this._svg;
-    svg.selectAll("*").remove(); // clear previous
+    const processedData = data.map(d => ({
+      area: d[areaDim]?.value,
+      value: +d[valueDim]?.value
+    })).filter(d => d.area && !isNaN(d.value));
 
-    const g = svg
+    console.log("✅ Processed data:", processedData);
+
+    if (processedData.length === 0) {
+      this.addError({
+        title: "No Valid Data",
+        message: "No valid data points to plot."
+      });
+      console.error("❌ No valid data after processing.");
+      done();
+      return;
+    }
+
+    // Clear previous SVG
+    this._svg.selectAll("*").remove();
+
+    const width = element.offsetWidth;
+    const height = element.offsetHeight;
+    const radius = Math.min(width, height) / 2 - 30;
+
+    const svg = this._svg
       .attr("width", width)
       .attr("height", height)
       .append("g")
       .attr("transform", `translate(${width / 2}, ${height / 2})`);
 
-    const tooltip = this._tooltip;
-
-    const arc = d3.arc()
-      .innerRadius(minRadius)
-      .outerRadius(d => minRadius + (maxRadius - minRadius) * d.value / 100);
-
     const pie = d3.pie()
-      .value(1)
+      .value(d => d.value)
       .sort(null);
 
-    // Prepare data
-    const dimName = queryResponse.fields.dimensions[0].name;
-    const measureName = queryResponse.fields.measures[0].name;
+    const arc = d3.arc()
+      .innerRadius(radius * 0.5)
+      .outerRadius(radius);
 
-    const plotData = data.map(d => ({
-      label: LookerCharts.Utils.textForCell(d[dimName]),
-      value: +LookerCharts.Utils.textForCell(d[measureName])
-    }));
+    const color = d3.scaleOrdinal(d3.schemeCategory10);
 
-    // Draw slices
-    const slices = g.selectAll(".arc")
-      .data(pie(plotData))
+    const arcs = svg.selectAll("arc")
+      .data(pie(processedData))
       .enter()
       .append("g")
       .attr("class", "arc");
 
-    slices.append("path")
+    arcs.append("path")
       .attr("d", arc)
-      .attr("fill", color)
-      .on("mouseover", function(d) {
-        tooltip
-          .style("opacity", 1)
-          .html(`<strong>${d.data.label}</strong><br>${d.data.value}%`)
-          .style("left", (d3.event.pageX) + "px")
-          .style("top", (d3.event.pageY - 28) + "px");
+      .attr("fill", (d, i) => color(i))
+      .on("mouseover", (event, d) => {
+        this._tooltip.transition().duration(200).style("opacity", .9);
+        this._tooltip
+          .html(`<strong>${d.data.area}</strong><br/>Value: ${d.data.value}`)
+          .style("left", (event.pageX) + "px")
+          .style("top", (event.pageY - 28) + "px");
       })
-      .on("mouseout", function() {
-        tooltip.style("opacity", 0);
+      .on("mouseout", () => {
+        this._tooltip.transition().duration(500).style("opacity", 0);
       });
 
-    // Add labels at the outer edge
-    slices.append("text")
-      .attr("transform", function(d) {
-        const [x, y] = arc.centroid(d);
-        const scale = (maxRadius + 15) / Math.sqrt(x * x + y * y);
-        return `translate(${x * scale},${y * scale})`;
-      })
+    // Add labels
+    arcs.append("text")
+      .attr("transform", d => `translate(${arc.centroid(d)})`)
       .attr("text-anchor", "middle")
-      .attr("alignment-baseline", "middle")
+      .attr("dy", "0.35em")
+      .text(d => d.data.area)
       .style("font-size", "10px")
-      .text(d => d.data.label);
+      .style("fill", "#fff");
+
+    console.log("✅ Rendering complete.");
 
     done();
   }
