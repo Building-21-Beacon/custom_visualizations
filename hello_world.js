@@ -121,6 +121,8 @@ looker.plugins.visualizations.add({
       .on('mouseover', (d,e) => {
         console.log(d)
         console.log(e)
+        .transition()
+        .duration(100)
         this._tooltip
           .style('opacity', 1)
           .html(`
