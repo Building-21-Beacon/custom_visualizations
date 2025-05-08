@@ -23,7 +23,7 @@ looker.plugins.visualizations.add({
     `;
     if (typeof d3 === 'undefined') {
       const s = document.createElement('script');
-      s.src = 'https://d3js.org/d3.v5.min.js';
+      s.src = 'https://d3js.org/d3.v6.min.js';
       s.onload = () => {
         console.log("✅ D3 loaded");
         this._initSvg(element);
