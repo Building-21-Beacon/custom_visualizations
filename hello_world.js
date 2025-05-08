@@ -61,7 +61,7 @@ looker.plugins.visualizations.add({
       label: d[dim].value,
       performance: +d[perf].value,
       growth: +d[growth].value
-    })).filter(d => d.label && !isFinite(d.performance) === false && !isFinite(d.growth) === false);
+    })).filter(d => d.label && isFinite(d.performance) && isFinite(d.growth));
 
     if (!pts.length) {
       this.addError({ title: 'No Data', message: 'No valid rows.' });
@@ -73,40 +73,35 @@ looker.plugins.visualizations.add({
     const margin = 40;
     const radius = Math.min(width, height) / 2 - margin;
 
-    // group container
     const g = this._svg
       .attr('width', width)
       .attr('height', height)
       .append('g')
       .attr('transform', `translate(${width/2},${height/2})`);
 
-    // scale radial by performance
     const maxPerf = d3.max(pts, d => d.performance);
     const maxVal = Math.max(maxPerf, globalTarget);
     const rScale = d3.scaleLinear().domain([0, maxVal]).range([0, radius]);
 
-    // color scale stays constant: above vs below target
-    
-    // prepare pie: angle proportional to growth
     const pie = d3.pie()
       .value(d => d.growth)
       .sort((a, b) => d3.ascending(a.label, b.label));
     const arcs = pie(pts);
 
-    // arc generator: radial bars
     const arcGen = d3.arc()
       .innerRadius(0)
       .outerRadius(d => rScale(d.data.performance))
-      .startAngle(d => d.startAngle)
-      .endAngle(d => d.endAngle)
-      .padAngle(0.02)
+      .padAngle(0.1)
       .padRadius(0);
 
-    // draw segments
     g.selectAll('path')
       .data(arcs)
       .enter().append('path')
-      .attr('d', arcGen)
+      .attr('d', d => arcGen({
+        startAngle: d.startAngle,
+        endAngle: d.endAngle,
+        data: d.data
+      }))
       .style('fill', d => d.data.performance < globalTarget ? '#8cc540' : '#0070bb')
       .on('mouseover', (event, d) => {
         this._tooltip
@@ -117,22 +112,24 @@ looker.plugins.visualizations.add({
       })
       .on('mouseout', () => this._tooltip.style('opacity', 0));
 
-    // draw global target circle
+    // target circle
     g.append('circle')
       .attr('r', rScale(globalTarget))
       .style('fill', 'none')
       .style('stroke', '#999')
-      .style('stroke-width', 2)
-      .style('opacity', 0.5);
+      .style('stroke-width', 4)
+      .style('opacity', .8);
 
-    // labels at mid-angle and mid-radius
     g.selectAll('text')
       .data(arcs)
       .enter().append('text')
       .attr('transform', d => {
-        const angle = (d.startAngle + d.endAngle) / 2 - Math.PI/2;
+        const mid = (d.startAngle + d.endAngle) / 2;
+        let angle = mid * 180 / Math.PI - 90;
+        let rotation = angle;
+        if (angle > 90 || angle < -90) rotation = angle + 180;
         const r = rScale(d.data.performance) / 2;
-        return `rotate(${angle * 180 / Math.PI}) translate(${r},0)`;
+        return `rotate(${rotation}) translate(${r},0)`;
       })
       .attr('text-anchor', 'middle')
       .attr('dy', '0.35em')
@@ -143,4 +140,3 @@ looker.plugins.visualizations.add({
     done();
   }
 });
-
