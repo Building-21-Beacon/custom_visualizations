@@ -101,13 +101,13 @@ looker.plugins.visualizations.add({
     // arc: radius ∝ growth
     const arc = d3.arc()
       .innerRadius(innerR)
-      .outerRadius(d => innerR + (d.growth / maxGrowth) * (outerMax - innerR));
+      .outerRadius(d => innerR + (d.data.growth / maxGrowth) * (outerMax - innerR));
 
     const color = d3.scaleOrdinal(d3.schemeCategory10);
 
     // bind slices
     const slices = g.selectAll('g.slice')
-      .data(pts)
+      .data(pie(pts))
       .enter()
       .append('g')
       .attr('class', 'slice');
@@ -122,9 +122,9 @@ looker.plugins.visualizations.add({
         this._tooltip
           .style('opacity', 1)
           .html(`
-            <strong>${d.area}</strong><br/>
-            Perf: ${d.performance}<br/>
-            Growth: ${d.growth}
+            <strong>${d.data.area}</strong><br/>
+            Perf: ${d.data.performance}<br/>
+            Growth: ${d.data.growth}
           `)
           .style('left', (e.pageX+5)+'px')
           .style('top', (e.pageY-28)+'px');
