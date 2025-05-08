@@ -69,6 +69,8 @@ looker.plugins.visualizations.add({
       }))
       .filter(d => d.area && !isNaN(d.performance) && !isNaN(d.growth));
 
+    console.log(pts)
+
     if (pts.length === 0) {
       this.addError({ title: "No Data", message: "No valid rows." });
       return done();
