@@ -118,7 +118,7 @@ looker.plugins.visualizations.add({
     slices.append('path')
       .attr('d', arc)
       .attr('fill', (d,i) => color(i))
-      .on('mouseover', (e,d) => {
+      .on('mouseover', (d,e) => {
         console.log(d)
         console.log(e)
         this._tooltip
