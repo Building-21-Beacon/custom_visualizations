@@ -132,7 +132,7 @@ looker.plugins.visualizations.add({
 
     const arc = d3.arc()
       .innerRadius(radius * 0.5)
-      .outerRadius(radius);
+      .outerRadius(d => radius * d.data[measureField.name].value)
 
     const color = d3.scaleOrdinal(d3.schemeCategory10);
 
@@ -148,7 +148,7 @@ looker.plugins.visualizations.add({
       .on("mouseover", (event, d) => {
         this._tooltip.transition().duration(200).style("opacity", .9);
         this._tooltip
-          .html(`<strong>${d.data.area}</strong><br/>Value: ${d.data.value}`)
+          .html(`<strong>${d.data[measureField.name].value}</strong><br/>Value: ${d.data.value}`)
           .style("left", (event.pageX) + "px")
           .style("top", (event.pageY - 28) + "px");
       })
@@ -161,7 +161,7 @@ looker.plugins.visualizations.add({
       .attr("transform", d => `translate(${arc.centroid(d)})`)
       .attr("text-anchor", "middle")
       .attr("dy", "0.35em")
-      .text(d => d.data.area)
+      .text(d => d.data[measureField.name].value)
       .style("font-size", "10px")
       .style("fill", "#fff");
 
