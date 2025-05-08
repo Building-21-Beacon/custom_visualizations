@@ -6,16 +6,16 @@ looker.plugins.visualizations.add({
   create: function(element, config) {
     console.log("🚀 Viz create called.");
 
-    // Inject a style tag
     element.innerHTML = `
       <style>
         .aster-plot {
           height: 100%;
+          min-height: 400px;
           display: flex;
           justify-content: center;
           align-items: center;
-          box-sizing: border-box; /* ✅ Ensure padding/border don't collapse size */
-          background: rgba(0, 255, 0, 0.1); /* Light green for debugging */
+          box-sizing: border-box;
+          background: rgba(0, 255, 0, 0.1);
         }
         .tooltip {
           position: absolute;
@@ -60,7 +60,7 @@ looker.plugins.visualizations.add({
       .append("svg")
       .attr("width", "100%")
       .attr("height", "100%")
-      .attr("viewBox", "0 0 600 600")  // 👈 Makes scaling work well
+      .attr("viewBox", "0 0 600 600")
       .attr("preserveAspectRatio", "xMidYMid meet");
 
     this._tooltip = d3.select(element).append("div")
@@ -78,25 +78,23 @@ looker.plugins.visualizations.add({
     console.log("📊 Data received:", data);
     console.log("🧾 queryResponse:", queryResponse);
 
-    // Basic data validation
-    if (queryResponse.fields.dimensions.length < 2) {
+    // Expect at least 1 dimension and 1 measure
+    if (queryResponse.fields.dimensions.length < 1 || queryResponse.fields.measures.length < 1) {
       this.addError({
         title: "Invalid Data",
-        message: "This chart requires at least 2 dimensions: Area and Value."
+        message: "This chart requires 1 dimension (Area) and 1 measure (Value)."
       });
-      console.error("❌ Not enough dimensions.");
+      console.error("❌ Missing dimension or measure.");
       done();
       return;
     }
 
-    // Prepare data: assume 1st dim = Area, 2nd dim = Value
     const areaDim = queryResponse.fields.dimensions[0].name;
-    const valueDim = queryResponse.fields.dimensions[1].name;
-    const measureField = queryResponse.fields.measures[0].name; 
+    const measureField = queryResponse.fields.measures[0].name;
 
     const processedData = data.map(d => ({
       area: d[areaDim]?.value,
-      value: +d[valueDim]?.value
+      value: +d[measureField]?.value
     })).filter(d => d.area && !isNaN(d.value));
 
     console.log("✅ Processed data:", processedData);
@@ -129,9 +127,10 @@ looker.plugins.visualizations.add({
       .value(d => d.value)
       .sort(null);
 
+    // Outer radius is proportional to the value (aster plot style)
     const arc = d3.arc()
       .innerRadius(radius * 0.5)
-      .outerRadius(d => radius * d.data[measureField.name].value)
+      .outerRadius(d => radius * (d.data.value / d3.max(processedData, d => d.value)));
 
     const color = d3.scaleOrdinal(d3.schemeCategory10);
 
@@ -147,7 +146,7 @@ looker.plugins.visualizations.add({
       .on("mouseover", (event, d) => {
         this._tooltip.transition().duration(200).style("opacity", .9);
         this._tooltip
-          .html(`<strong>${d.data[measureField.name].value}</strong><br/>Value: ${d.data.value}`)
+          .html(`<strong>${d.data.area}</strong><br/>Value: ${d.data.value}`)
           .style("left", (event.pageX) + "px")
           .style("top", (event.pageY - 28) + "px");
       })
@@ -160,12 +159,12 @@ looker.plugins.visualizations.add({
       .attr("transform", d => `translate(${arc.centroid(d)})`)
       .attr("text-anchor", "middle")
       .attr("dy", "0.35em")
-      .text(d => d.data[measureField.name].value)
+      .text(d => d.data.area)
       .style("font-size", "10px")
       .style("fill", "#fff");
 
     console.log("✅ Rendering complete.");
-
     done();
   }
 });
+
