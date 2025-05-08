@@ -85,7 +85,7 @@ looker.plugins.visualizations.add({
       .range([0, 2 * Math.PI])
       .padding(0.05);
 
-    // radial scale for performance and target
+    // radial scale
     const maxPerf = d3.max(pts, d => d.performance);
     const maxVal = Math.max(maxPerf, globalTarget);
     const rScale = d3.scaleLinear().domain([0, maxVal]).range([0, radius]);
@@ -93,17 +93,12 @@ looker.plugins.visualizations.add({
     // thickness scale for growth
     const minG = d3.min(pts, d => d.growth);
     const maxG = d3.max(pts, d => d.growth);
-    const thickness = d3.scaleLinear().domain([minG, maxG]).range([5, radius*0.1]);
-
-    // color scale
-    const color = d3.scaleLinear()
-      .domain([minG, (minG+maxG)/2, maxG])
-      .range(['#d73027', '#fdae61', '#1a9850']);
+    const thickness = d3.scaleLinear().domain([minG, maxG]).range([5, radius * 0.1]);
 
     const pie = d3.pie().value(() => 1).sort((a, b) => x(a.label) - x(b.label));
     const arcs = pie(pts);
 
-    // draw performance arcs with growth-thickness and target-based brightness
+    // draw arcs: thickness=growth, color based on target
     g.selectAll('.perf')
       .data(arcs)
       .enter().append('path')
@@ -120,8 +115,7 @@ looker.plugins.visualizations.add({
           .endAngle(x(d.data.label) + x.bandwidth())
           .padAngle(0.01)();
       })
-      .style('fill', d => color(d.data.growth))
-      .style('opacity', d => d.data.performance >= globalTarget ? 1 : 0.3)
+      .style('fill', d => d.data.performance < globalTarget ? '#8cc540' : '#0070bb')
       .on('mouseover', (event, d) => {
         this._tooltip
           .style('opacity', 1)
@@ -153,7 +147,7 @@ looker.plugins.visualizations.add({
       .attr('transform', d => {
         const pR = rScale(d.data.performance);
         const angle = x(d.data.label) + x.bandwidth()/2 - Math.PI/2;
-        return `rotate(${angle*180/Math.PI}) translate(${pR},0)`;
+        return `rotate(${angle * 180 / Math.PI}) translate(${pR},0)`;
       })
       .attr('text-anchor', 'middle')
       .attr('dy', '0.35em')
@@ -164,4 +158,3 @@ looker.plugins.visualizations.add({
     done();
   }
 });
-
