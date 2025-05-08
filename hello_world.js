@@ -1,24 +1,14 @@
 looker.plugins.visualizations.add({
-  id: "simple_aster_plot",
-  label: "Simple Aster Plot",
+  id: "dynamic_aster_plot",
+  label: "Dynamic Aster Plot",
   options: {},
 
   create(element, config) {
-    console.log("🛠️ create() called");
+    console.log("⚙️ create()");
 
-    // Don’t force a huge height—just ensure a small minimum
-    element.style.minHeight = "200px";
-
+    // Inject basic styles
     element.innerHTML = `
       <style>
-        .aster-plot {
-          width: 100%;
-          height: 100%;
-          min-height: 200px;        /* ↓ lower min-height */
-          display: flex;
-          justify-content: center;
-          align-items: center;
-        }
         .tooltip {
           position: absolute;
           padding: 4px 8px;
@@ -30,72 +20,94 @@ looker.plugins.visualizations.add({
           opacity: 0;
         }
       </style>
-      <div class="aster-plot"></div>
       <div class="tooltip"></div>
     `;
 
-    // Load D3 if missing
+    // Load D3 if needed
     if (typeof d3 === 'undefined') {
-      console.log("📦 Loading D3…");
       const s = document.createElement('script');
       s.src = 'https://d3js.org/d3.v5.min.js';
       s.onload = () => {
         console.log("✅ D3 loaded");
-        this._setup(element);
+        this._initSvg(element);
       };
-      s.onerror = () => console.error("❌ Failed to load D3");
       document.head.appendChild(s);
     } else {
-      console.log("✅ D3 already present");
-      this._setup(element);
+      this._initSvg(element);
     }
   },
 
-  _setup(element) {
-    console.log("🔧 _setup()");
-    this._container = d3.select(element).select('.aster-plot');
-    this._tooltip = d3.select(element).select('.tooltip');
-
-    // Responsive SVG using viewBox
-    this._svg = this._container
+  _initSvg(element) {
+    console.log("🔧 _initSvg()");
+    // Create an SVG that we'll resize on each update
+    this._svg = d3.select(element)
       .append('svg')
-      .attr('viewBox', '0 0 600 600')
-      .attr('preserveAspectRatio', 'xMidYMid meet');
+      .style('width', '100%')
+      .style('height', '100%');
+    this._tooltip = d3.select(element).select('.tooltip');
   },
 
   updateAsync(data, element, config, queryResponse, details, done) {
-    if (typeof d3 === 'undefined') return done();
+    if (typeof d3 === 'undefined') {
+      console.warn("🌱 D3 not ready");
+      return done();
+    }
 
     console.log("🔄 updateAsync()", data);
 
-    if (!queryResponse.fields.dimensions.length || !queryResponse.fields.measures.length) {
-      this.addError({ title: "Missing Fields", message: "Need 1 dimension + 1 measure." });
+    // Need 1 dimension + 1 measure
+    if (queryResponse.fields.dimensions.length < 1 ||
+        queryResponse.fields.measures.length < 1) {
+      this.addError({
+        title: "Missing Data",
+        message: "Requires 1 dimension & 1 measure."
+      });
       return done();
     }
 
     const dim = queryResponse.fields.dimensions[0].name;
     const mea = queryResponse.fields.measures[0].name;
 
+    // Map to simple objects
     const pts = data
       .map(d => ({ area: d[dim]?.value, value: +d[mea]?.value }))
-      .filter(d => d.area && !isNaN(d.value));
+      .filter(d => d.area != null && !isNaN(d.value));
 
-    if (!pts.length) {
-      this.addError({ title: "No Data", message: "No valid points to plot." });
+    if (pts.length === 0) {
+      this.addError({ title: "No Data", message: "No valid points." });
       return done();
     }
-    console.log("Processed pts:", pts);
 
+    // Get actual pixel size
+    const w = element.clientWidth;
+    const h = element.clientHeight;
+    console.log(`▶️ size: ${w}×${h}`);
+
+    // Clear & resize SVG
     this._svg.selectAll('*').remove();
-    const g = this._svg.append('g').attr('transform', 'translate(300,300)');
+    this._svg
+      .attr('width', w)
+      .attr('height', h);
 
+    // Center group
+    const g = this._svg
+      .append('g')
+      .attr('transform', `translate(${w/2},${h/2})`);
+
+    // Build aster: equal angles
     const pie = d3.pie().value(() => 1).sort(null);
     const maxVal = d3.max(pts, d => d.value);
 
-    const arc = d3.arc()
-      .innerRadius(50)
-      .outerRadius(d => 50 + (d.data.value / maxVal) * 250);
+    // Radii: inner 20%, outer up to 80% of min(w,h)/2
+    const R = Math.min(w, h) / 2;
+    const innerR = R * 0.2;
+    const outerMax = R * 0.8;
 
+    const arc = d3.arc()
+      .innerRadius(innerR)
+      .outerRadius(d => innerR + (d.data.value / maxVal) * (outerMax - innerR));
+
+    // Draw slices
     const slices = g.selectAll('g.slice')
       .data(pie(pts))
       .enter()
@@ -108,12 +120,13 @@ looker.plugins.visualizations.add({
       .on('mouseover', (e,d) => {
         this._tooltip
           .style('opacity', 1)
-          .html(`<strong>${d.data.area}</strong><br/>${d.data.value}`)
+          .html(`<strong>${d.data.area}</strong><br>${d.data.value}`)
           .style('left', (e.pageX+5)+'px')
           .style('top', (e.pageY-28)+'px');
       })
       .on('mouseout', () => this._tooltip.style('opacity', 0));
 
+    // Labels
     slices.append('text')
       .attr('transform', d => `translate(${arc.centroid(d)})`)
       .attr('text-anchor', 'middle')
@@ -122,7 +135,7 @@ looker.plugins.visualizations.add({
       .style('fill', '#fff')
       .text(d => d.data.area);
 
-    console.log("✅ Aster plot rendered");
+    console.log("✅ Rendered at dynamic size");
     done();
   }
 });
