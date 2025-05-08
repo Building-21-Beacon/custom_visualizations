@@ -7,8 +7,8 @@ looker.plugins.visualizations.add({
     console.log("🛠️  create() called");
 
     // Force the Looker container to be tall enough
-    element.style.height = "200px";
-    element.style.minHeight = "200px";
+    element.style.height = "125px";
+    element.style.minHeight = "125px";
 
     // Inject a wrapper and basic styles
     element.innerHTML = `
