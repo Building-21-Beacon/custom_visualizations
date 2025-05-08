@@ -10,9 +10,7 @@ looker.plugins.visualizations.add({
     element.innerHTML = `
       <style>
         .aster-plot {
-          width: 100%;
           height: 100%;
-          min-height: 400px; /* ✅ Add a minimum height */
           display: flex;
           justify-content: center;
           align-items: center;
@@ -94,6 +92,7 @@ looker.plugins.visualizations.add({
     // Prepare data: assume 1st dim = Area, 2nd dim = Value
     const areaDim = queryResponse.fields.dimensions[0].name;
     const valueDim = queryResponse.fields.dimensions[1].name;
+    const measureField = queryResponse.fields.measures[0].name; 
 
     const processedData = data.map(d => ({
       area: d[areaDim]?.value,
