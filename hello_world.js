@@ -79,7 +79,7 @@ looker.plugins.visualizations.add({
       .attr('d', arcGen)
       .style('fill', d=> {
         const base = colorScale(d.data.label);
-        return d.data.performance >= target ? d3.color(base).darker(1).formatHex() : base;
+        return d.data.performance >= target ? d3.color(base).darker(2).formatHex() : base;
       })
       .on('mouseover', (e,d)=>{
         this._tooltip.style('opacity',1)
@@ -108,11 +108,13 @@ looker.plugins.visualizations.add({
       .data(pts).enter().append('g').attr('class','legend-item')
       .attr('transform', (d,i) => `translate(0, ${i * 18})`);
     legendItems.append('rect')
-      .attr('width', 12).attr('height', 12)
+      .attr('width', 16).attr('height', 16)
       .style('fill', d => colorScale(d.label));
     legendItems.append('text')
       .attr('x', 16).attr('y', 6).attr('dy', '0.35em')
-      .text(d => d.label);
+      .text(d => d.label)
+      .style('font-sizel', 16);
+    font-size: 10px
 
     done();
   }
