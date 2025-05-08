@@ -1,12 +1,10 @@
 looker.plugins.visualizations.add({
-  id: "dynamic_aster_plot",
-  label: "Dynamic Aster Plot",
+  id: "perf_growth_radial",
+  label: "Performance-Growth Radial",
   options: {},
 
   create(element, config) {
     console.log("⚙️ create()");
-
-    // Inject basic styles
     element.innerHTML = `
       <style>
         .tooltip {
@@ -22,8 +20,7 @@ looker.plugins.visualizations.add({
       </style>
       <div class="tooltip"></div>
     `;
-
-    // Load D3 if needed
+    // load D3
     if (typeof d3 === 'undefined') {
       const s = document.createElement('script');
       s.src = 'https://d3js.org/d3.v5.min.js';
@@ -39,7 +36,6 @@ looker.plugins.visualizations.add({
 
   _initSvg(element) {
     console.log("🔧 _initSvg()");
-    // Create an SVG that we'll resize on each update
     this._svg = d3.select(element)
       .append('svg')
       .style('width', '100%')
@@ -48,94 +44,105 @@ looker.plugins.visualizations.add({
   },
 
   updateAsync(data, element, config, queryResponse, details, done) {
-    if (typeof d3 === 'undefined') {
-      console.warn("🌱 D3 not ready");
-      return done();
-    }
+    if (typeof d3 === 'undefined') return done();
 
-    console.log("🔄 updateAsync()", data);
-
-    // Need 1 dimension + 1 measure
+    // need 1 dimension + 2 measures
     if (queryResponse.fields.dimensions.length < 1 ||
-        queryResponse.fields.measures.length < 1) {
+        queryResponse.fields.measures.length < 2) {
       this.addError({
-        title: "Missing Data",
-        message: "Requires 1 dimension & 1 measure."
+        title: "Missing Fields",
+        message: "Requires 1 dimension + 2 measures: Performance, Growth."
       });
       return done();
     }
 
-    const dim = queryResponse.fields.dimensions[0].name;
-    const mea = queryResponse.fields.measures[0].name;
+    const dimName = queryResponse.fields.dimensions[0].name;
+    const perfName = queryResponse.fields.measures[0].name;
+    const growthName = queryResponse.fields.measures[1].name;
 
-    // Map to simple objects
+    // normalize
     const pts = data
-      .map(d => ({ area: d[dim]?.value, value: +d[mea]?.value }))
-      .filter(d => d.area != null && !isNaN(d.value));
+      .map(d => ({
+        area:      d[dimName]?.value,
+        performance: +d[perfName]?.value,
+        growth:      +d[growthName]?.value
+      }))
+      .filter(d => d.area && !isNaN(d.performance) && !isNaN(d.growth));
 
     if (pts.length === 0) {
-      this.addError({ title: "No Data", message: "No valid points." });
+      this.addError({ title: "No Data", message: "No valid rows." });
       return done();
     }
 
-    // Get actual pixel size
+    // measure ranges
+    const totalPerf = d3.sum(pts, d => d.performance);
+    const maxGrowth  = d3.max(pts, d => d.growth);
+
+    // size
     const w = element.clientWidth;
     const h = element.clientHeight;
-    console.log(`▶️ size: ${w}×${h}`);
+    const R = Math.min(w, h) / 2;
+    const innerR = R * 0.1;         // small hole in center
+    const outerMax = R * 0.9;       // leave 10% margin
 
-    // Clear & resize SVG
+    // clear + resize
     this._svg.selectAll('*').remove();
-    this._svg
-      .attr('width', w)
-      .attr('height', h);
+    this._svg.attr('width', w).attr('height', h);
 
-    // Center group
     const g = this._svg
       .append('g')
       .attr('transform', `translate(${w/2},${h/2})`);
 
-    // Build aster: equal angles
-    const pie = d3.pie().value(() => 1).sort(null);
-    const maxVal = d3.max(pts, d => d.value);
+    // pie: angle ∝ performance
+    const pie = d3.pie()
+      .value(d => d.performance)
+      .sort(null);
 
-    // Radii: inner 20%, outer up to 80% of min(w,h)/2
-    const R = Math.min(w, h) / 2;
-    const innerR = R * 0.2;
-    const outerMax = R * 0.8;
-
+    // arc: radius ∝ growth
     const arc = d3.arc()
       .innerRadius(innerR)
-      .outerRadius(d => innerR + (d.data.value / maxVal) * (outerMax - innerR));
+      .outerRadius(d => innerR + (d.data.growth / maxGrowth) * (outerMax - innerR));
 
-    // Draw slices
+    const color = d3.scaleOrdinal(d3.schemeCategory10);
+
+    // bind slices
     const slices = g.selectAll('g.slice')
       .data(pie(pts))
       .enter()
       .append('g')
       .attr('class', 'slice');
 
+    // draw
     slices.append('path')
       .attr('d', arc)
-      .attr('fill', (d,i) => d3.schemeCategory10[i % 10])
+      .attr('fill', (d,i) => color(i))
       .on('mouseover', (e,d) => {
         this._tooltip
           .style('opacity', 1)
-          .html(`<strong>${d.data.area}</strong><br>${d.data.value}`)
+          .html(`
+            <strong>${d.data.area}</strong><br/>
+            Perf: ${d.data.performance}<br/>
+            Growth: ${d.data.growth}
+          `)
           .style('left', (e.pageX+5)+'px')
           .style('top', (e.pageY-28)+'px');
       })
       .on('mouseout', () => this._tooltip.style('opacity', 0));
 
-    // Labels
+    // labels at mid‐radius of each slice
     slices.append('text')
-      .attr('transform', d => `translate(${arc.centroid(d)})`)
+      .attr('transform', d => {
+        // compute mid‐angle centroid
+        const c = arc.centroid(d);
+        return `translate(${c[0]},${c[1]})`;
+      })
       .attr('text-anchor', 'middle')
       .attr('dy', '0.35em')
       .style('font-size', '10px')
       .style('fill', '#fff')
       .text(d => d.data.area);
 
-    console.log("✅ Rendered at dynamic size");
+    console.log("✅ Rendered Perf-Growth radial chart");
     done();
   }
 });
