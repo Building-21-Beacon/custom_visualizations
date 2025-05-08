@@ -121,8 +121,6 @@ looker.plugins.visualizations.add({
       .on('mouseover', (d,e) => {
         console.log(d)
         console.log(e)
-        .transition()
-        .duration(100)
         this._tooltip
           .style('opacity', 1)
           .html(`
@@ -133,6 +131,8 @@ looker.plugins.visualizations.add({
           .style('left', (e.pageX+5)+'px')
           .style('top', (e.pageY-28)+'px');
       })
+      .transition()
+      .duration(100)
       .on('mouseout', () => this._tooltip.style('opacity', 0));
 
     // labels at mid‐radius of each slice
