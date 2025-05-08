@@ -91,7 +91,7 @@ looker.plugins.visualizations.add({
     const arcGen = d3.arc()
       .innerRadius(0)
       .outerRadius(d => rScale(d.data.performance))
-      .padAngle(0.1)
+      .padAngle(0.3)
       .padRadius(0);
 
     g.selectAll('path')
@@ -120,22 +120,15 @@ looker.plugins.visualizations.add({
       .style('stroke-width', 4)
       .style('opacity', .8);
 
-    g.selectAll('text')
-      .data(arcs)
-      .enter().append('text')
-      .attr('transform', d => {
-        const mid = (d.startAngle + d.endAngle) / 2;
-        let angle = mid * 180 / Math.PI - 90;
-        let rotation = angle;
-        if (angle > 90 || angle < -90) rotation = angle + 180;
-        const r = rScale(d.data.performance) / 2;
-        return `rotate(${rotation}) translate(${r},0)`;
-      })
-      .attr('text-anchor', 'middle')
-      .attr('dy', '0.35em')
-      .attr('font-size', 10)
-      .style('fill', '#fff')
-      .text(d => d.data.label);
+    const labelOffset = 20;
+    g.selectAll('.label')
+      .data(arcs).enter().append('text')
+      .attr('class','label')
+      .attr('x', d=> Math.cos((d.startAngle+d.endAngle)/2 - Math.PI/2)*(rScale(d.data.performance)+labelOffset))
+      .attr('y', d=> Math.sin((d.startAngle+d.endAngle)/2 - Math.PI/2)*(rScale(d.data.performance)+labelOffset))
+      .attr('text-anchor', d=> ((d.startAngle+d.endAngle)/2 > Math.PI? 'end':'start'))
+      .attr('font-size',10).style('fill','#333')
+      .text(d=>d.data.label);
 
     done();
   }
