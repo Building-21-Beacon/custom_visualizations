@@ -6,22 +6,48 @@ looker.plugins.visualizations.add({
   },
 
   create(element, config) {
+    // Inject scoped styles
     element.innerHTML = `
       <style>
-        .tooltip {
+        .hpvg-tooltip {
           position: absolute;
-          padding: 8px 12px;
+          padding: 6px 10px;
           font: 14px sans-serif;
           background: rgba(0,0,0,0.7);
           color: #fff;
           border-radius: 4px;
           pointer-events: none;
           opacity: 0;
+          transition: opacity 0.2s ease-in-out;
         }
-        .legend-item text { font-size: 14px; fill: #333; }
+        .hpvg-chart .axis path,
+        .hpvg-chart .axis line {
+          stroke: #ccc;
+        }
+        .hpvg-chart .grid line {
+          stroke: #eee;
+          shape-rendering: crispEdges;
+        }
+        .hpvg-bar-base {
+          fill: #6baed6;
+        }
+        .hpvg-bar-growth {
+          fill: #2171b5;
+        }
+        .hpvg-target-line {
+          stroke: #e6550d;
+          stroke-dasharray: 4 4;
+          stroke-width: 2;
+        }
+        .hpvg-label {
+          font: 12px sans-serif;
+          fill: #333;
+        }
       </style>
-      <div class="tooltip"></div>
+      <div class="hpvg-tooltip"></div>
     `;
+
+    // Load D3 if necessary
     if (typeof d3 === 'undefined' || !d3.scaleBand) {
       const script = document.createElement('script');
       script.src = 'https://d3js.org/d3.v6.min.js';
@@ -33,161 +59,182 @@ looker.plugins.visualizations.add({
   },
 
   _initSvg(element) {
+    // Create the SVG container
     this._svg = d3.select(element)
       .append('svg')
+      .classed('hpvg-chart', true)
       .style('width', '100%')
       .style('height', '100%');
-    this._tooltip = d3.select(element).select('.tooltip');
+    this._tooltip = d3.select(element).select('.hpvg-tooltip');
+
+    // Make chart responsive
+    window.addEventListener('resize', () => {
+      // Debounce resize events
+      clearTimeout(this._resizeTimer);
+      this._resizeTimer = setTimeout(() => {
+        this.updateAsync(this._lastData, this._lastElement, this._lastConfig, this._lastQR, {}, () => {});
+      }, 200);
+    });
   },
 
   updateAsync(data, element, config, queryResponse, details, done) {
+    this._lastData = data;
+    this._lastElement = element;
+    this._lastConfig = config;
+    this._lastQR = queryResponse;
+
     this.clearErrors();
     if (!this._svg) this._initSvg(element);
     this._svg.selectAll('*').remove();
 
-    // require fields
+    // Validate fields
     if (queryResponse.fields.dimensions.length < 1 || queryResponse.fields.measures.length < 2) {
-      this.addError({
-        title: "Missing Fields",
-        message: "Requires 1 dimension + 2 measures: Competency, Performance, Growth."
-      });
+      this.addError({ title: 'Missing Fields', message: 'Requires 1 dimension + 2 measures: Competency, Performance, Growth.' });
       return done();
     }
 
-    const dimName = queryResponse.fields.dimensions[0].name;
-    const perfName = queryResponse.fields.measures[0].name;
-    const growthName = queryResponse.fields.measures[1].name;
-    const target = Number(config.target_value) || 0;
+    const dim = queryResponse.fields.dimensions[0].name;
+    const perfField = queryResponse.fields.measures[0].name;
+    const growthField = queryResponse.fields.measures[1].name;
+    const target = +config.target_value || 0;
 
-    const pts = data.map(d => ({
-      competency: d[dimName].value,
-      performance: +d[perfName].value,
-      growth: +d[growthName].value
+    // Process data
+    let pts = data.map(d => ({
+      competency: d[dim].value,
+      performance: +d[perfField].value,
+      growth: +d[growthField].value
     })).filter(d => d.competency && isFinite(d.performance) && isFinite(d.growth));
-
-    if (pts.length === 0) {
-      this.addError({ title: "No Data", message: "No valid rows." });
+    if (!pts.length) {
+      this.addError({ title: 'No Data', message: 'No valid rows.' });
       return done();
     }
 
-    const margin = { top: 50, right: 20, bottom: 40, left: 120 };
-    const totalWidth = element.clientWidth;
-    const totalHeight = element.clientHeight;
-    const width = totalWidth - margin.left - margin.right;
-    const height = totalHeight - margin.top - margin.bottom;
+    // Sort by performance descending
+    pts = pts.sort((a, b) => b.performance - a.performance);
 
-    const svg = this._svg
-      .attr('width', totalWidth)
-      .attr('height', totalHeight);
+    // Dimensions
+    const margin = { top: 60, right: 30, bottom: 40, left: 140 };
+    const totalW = element.clientWidth;
+    const totalH = element.clientHeight;
+    const width = totalW - margin.left - margin.right;
+    const height = totalH - margin.top - margin.bottom;
 
-    const chartG = svg.append('g')
-      .attr('transform', `translate(${margin.left},${margin.top})`);
+    // Create container group
+    const svg = this._svg.attr('width', totalW).attr('height', totalH);
+    const chart = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
 
-    // scales
+    // Scales
     const y = d3.scaleBand()
       .domain(pts.map(d => d.competency))
       .range([0, height])
-      .padding(0.3);
-
-    const maxPerf = d3.max(pts, d => d.performance);
+      .padding(0.2);
+    const xMax = d3.max(pts, d => Math.max(d.performance, target));
     const x = d3.scaleLinear()
-      .domain([0, Math.max(maxPerf, target)])
-      .range([0, width]);
+      .domain([0, xMax])
+      .range([0, width])
+      .nice();
 
-    // axes
-    const yAxis = d3.axisLeft(y).tickSize(0);
-    const xAxis = d3.axisBottom(x).ticks(5);
+    // Gridlines
+    chart.append('g')
+      .attr('class', 'grid')
+      .call(d3.axisBottom(x)
+        .ticks(5)
+        .tickSize(height)
+        .tickFormat('')
+      )
+      .attr('transform', `translate(0,${height})`);
 
-    chartG.append('g')
-      .call(yAxis)
+    // Axes
+    chart.append('g')
+      .attr('class', 'axis')
+      .call(d3.axisLeft(y))
       .selectAll('text')
-      .attr('font-size', '14px');
+        .attr('font-size', '14px');
 
-    chartG.append('g')
-      .attr('transform', `translate(0, ${height})`)
-      .call(xAxis)
+    chart.append('g')
+      .attr('class', 'axis')
+      .attr('transform', `translate(0,${height})`)
+      .call(d3.axisBottom(x).ticks(5))
       .selectAll('text')
-      .attr('font-size', '14px');
+        .attr('font-size', '14px');
 
-    // bars: base and growth
-    chartG.selectAll('.bar-base')
+    // Bars: base and growth with transitions
+    const bars = chart.selectAll('.hpvg-bar')
       .data(pts)
-      .enter().append('rect')
-      .attr('class', 'bar-base')
+      .enter()
+      .append('g')
+      .attr('class', 'hpvg-bar')
+      .attr('transform', d => `translate(0,${y(d.competency)})`);
+
+    bars.append('rect')
+      .attr('class', 'hpvg-bar-base')
       .attr('x', 0)
-      .attr('y', d => y(d.competency))
       .attr('height', y.bandwidth())
-      .attr('width', d => x(Math.max(0, d.performance - d.growth)))
-      .style('fill', '#0070bb');
+      .attr('width', 0)
+      .transition().duration(800).ease(d3.easeCubic)
+      .attr('width', d => x(d.performance - d.growth));
 
-    chartG.selectAll('.bar-growth')
-      .data(pts)
-      .enter().append('rect')
-      .attr('class', 'bar-growth')
-      .attr('x', d => x(Math.max(0, d.performance - d.growth)))
-      .attr('y', d => y(d.competency))
+    bars.append('rect')
+      .attr('class', 'hpvg-bar-growth')
+      .attr('x', d => x(d.performance - d.growth))
       .attr('height', y.bandwidth())
-      .attr('width', d => x(d.growth))
-      .style('fill', '#8cc540')
-      .on('mouseover', (event, d) => {
-        this._tooltip
-          .style('opacity', 1)
-          .html(`
-            <strong>${d.competency}</strong><br/>
-            Performance: ${d.performance}<br/>
-            Growth: ${d.growth}
-          `)
-          .style('left', (event.pageX + 5) + 'px')
-          .style('top', (event.pageY - 28) + 'px');
-      })
-      .on('mouseout', () => this._tooltip.style('opacity', 0));
+      .attr('width', 0)
+      .transition().duration(800).ease(d3.easeCubic)
+      .attr('width', d => x(d.growth));
 
-    // target line
-    chartG.append('line')
+    // Data labels at end of bars
+    bars.append('text')
+      .attr('class', 'hpvg-label')
+      .attr('x', d => x(d.performance) + 6)
+      .attr('y', y.bandwidth()/2)
+      .attr('dy', '0.35em')
+      .text(d => d.performance)
+      .attr('opacity', 0)
+      .transition().delay(800).duration(400)
+      .attr('opacity', 1);
+
+    // Target line
+    chart.append('line')
+      .attr('class', 'hpvg-target-line')
       .attr('x1', x(target))
       .attr('x2', x(target))
       .attr('y1', 0)
-      .attr('y2', height)
-      .style('stroke', '#e74c3c')
-      .style('stroke-width', 2)
-      .style('stroke-dasharray', '4,4');
+      .attr('y2', height);
 
-    // legend
+    // Legend
     const legendData = [
-      { label: 'Base Performance', color: '#0070bb' },
-      { label: 'Growth', color: '#8cc540' },
-      { label: `Target (${target})`, color: '#e74c3c', shape: 'line' }
+      { label: 'Base Performance', color: '#6baed6' },
+      { label: 'Growth', color: '#2171b5' },
+      { label: `Target (${target})`, color: '#e6550d', shape: 'line' }
     ];
-    const legend = svg.append('g')
-      .attr('transform', `translate(${margin.left}, ${margin.top / 2})`);
 
-    const legendItems = legend.selectAll('.legend-item')
+    const legend = svg.append('g')
+      .attr('transform', `translate(${margin.left}, ${margin.top - 40})`);
+
+    const item = legend.selectAll('.legend-item')
       .data(legendData)
       .enter().append('g')
       .attr('class', 'legend-item')
-      .attr('transform', (d, i) => `translate(${i * 180}, 0)`);
+      .attr('transform', (d,i) => `translate(${i * 180}, 0)`);
 
-    // legend marker
-    legendItems.each(function(d) {
+    item.each(function(d) {
       const g = d3.select(this);
       if (d.shape === 'line') {
         g.append('line')
-          .attr('x1', 0)
-          .attr('x2', 16)
-          .attr('y1', 6)
-          .attr('y2', 6)
+          .attr('x1', 0).attr('x2', 20)
+          .attr('y1', 6).attr('y2', 6)
           .style('stroke', d.color)
           .style('stroke-width', 2)
-          .style('stroke-dasharray', '4,4');
+          .style('stroke-dasharray', '4 4');
       } else {
         g.append('rect')
-          .attr('width', 12)
-          .attr('height', 12)
+          .attr('width', 16)
+          .attr('height', 16)
           .style('fill', d.color);
       }
       g.append('text')
-        .attr('x', 20)
-        .attr('y', 6)
+        .attr('x', d.shape === 'line' ? 24 : 20)
+        .attr('y', 8)
         .attr('dy', '0.35em')
         .attr('font-size', '14px')
         .text(d.label);
@@ -196,3 +243,4 @@ looker.plugins.visualizations.add({
     done();
   }
 });
+
