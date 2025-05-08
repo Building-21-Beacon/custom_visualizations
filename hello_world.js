@@ -112,6 +112,9 @@ looker.plugins.visualizations.add({
       .append('g')
       .attr('class', 'slice');
 
+    console.log(d)
+    console.log(d.data)
+
     // draw
     slices.append('path')
       .attr('d', arc)
