@@ -145,7 +145,13 @@ looker.plugins.visualizations.add({
       .attr('dy', '0.35em')
       .style('font-size', '18px')
       .style('fill', '#fff')
-      .text(d => d.data.area + "/nPL" + d.data.performance);
+      .style('word-wrap': 'break-word')
+      .html(`
+            <strong>${d.data.area}</strong><br/>
+            Perf: ${d.data.performance}<br/>
+            Growth: ${d.data.growth}
+          `)
+    
 
     console.log("✅ Rendered Perf-Growth radial chart");
     done();
