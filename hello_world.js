@@ -1,14 +1,13 @@
 looker.plugins.visualizations.add({
-  id: "stacked_radial_bars",
-  label: "Stacked Radial Bars",
+  id: "lighthouse_bars",
+  label: "Lighthouse Bars",
   options: {},
 
   create(element, config) {
-    console.log("⚙️ create()");
+    // inject basic styles
     element.innerHTML = `
       <style>
         .tooltip {
-          width: 15%;
           position: absolute;
           padding: 4px 8px;
           font: 12px sans-serif;
@@ -21,13 +20,12 @@ looker.plugins.visualizations.add({
       </style>
       <div class="tooltip"></div>
     `;
-    if (typeof d3 === 'undefined') {
+
+    // load D3 (v6+) if not present
+    if (typeof d3 === 'undefined' || !d3.scaleBand) {
       const s = document.createElement('script');
       s.src = 'https://d3js.org/d3.v6.min.js';
-      s.onload = () => {
-        console.log("✅ D3 loaded");
-        this._initSvg(element);
-      };
+      s.onload = () => this._initSvg(element);
       document.head.appendChild(s);
     } else {
       this._initSvg(element);
@@ -35,7 +33,7 @@ looker.plugins.visualizations.add({
   },
 
   _initSvg(element) {
-    console.log("🔧 _initSvg()");
+    // set up the SVG container and tooltip reference
     this._svg = d3.select(element)
       .append('svg')
       .style('width', '100%')
@@ -44,105 +42,108 @@ looker.plugins.visualizations.add({
   },
 
   updateAsync(data, element, config, queryResponse, details, done) {
-    if (typeof d3 === 'undefined') return done();
+    // clear previous errors and drawing
+    this.clearErrors();
+    this._svg.selectAll('*').remove();
 
-    // need 1 dimension + 2 measures
-    if (queryResponse.fields.dimensions.length < 1 ||
-        queryResponse.fields.measures.length < 2) {
+    // require 1 dimension + 2 measures
+    if (queryResponse.fields.dimensions.length < 1 || queryResponse.fields.measures.length < 2) {
       this.addError({
         title: "Missing Fields",
-        message: "Requires 1 dimension + 2 measures: Area, Performance, Growth."
+        message: "Requires 1 dimension + 2 measures: Competency, Performance, Target."
       });
       return done();
     }
 
-    const dimName = queryResponse.fields.dimensions[0].name;
-    const perfName = queryResponse.fields.measures[0].name;
-    const growthName = queryResponse.fields.measures[1].name;
+    // extract field names
+    const dimName    = queryResponse.fields.dimensions[0].name;
+    const perfName   = queryResponse.fields.measures[0].name;
+    const targetName = queryResponse.fields.measures[1].name;
 
+    // map & filter data
     const pts = data
       .map(d => ({
-        area: d[dimName]?.value,
-        performance: +d[perfName]?.value,
-        growth: +d[growthName]?.value
+        competency: d[dimName].value,
+        performance: +d[perfName].value,
+        target: +d[targetName].value
       }))
-      .filter(d => d.area && !isNaN(d.performance) && !isNaN(d.growth));
-
-    console.log(pts);
+      .filter(d => d.competency != null && !isNaN(d.performance) && !isNaN(d.target));
 
     if (pts.length === 0) {
       this.addError({ title: "No Data", message: "No valid rows." });
       return done();
     }
 
-    // Prepare data: group by area
-    const areas = d3.groups(pts, d => d.area);
-
+    // dimensions and margins
     const w = element.clientWidth;
     const h = element.clientHeight;
-    const outerRadius = Math.min(w, h) / 2;
-    const ringWidth = outerRadius / (areas.length + 1);  // +1 for padding
+    const margin = { top: 40, right: 20, bottom: 40, left: 20 };
+    const innerW = w - margin.left - margin.right;
+    const innerH = h - margin.top - margin.bottom;
 
-    this._svg.selectAll('*').remove();
-    this._svg.attr('width', w).attr('height', h);
-
+    // create group
     const g = this._svg
+      .attr('width', w)
+      .attr('height', h)
       .append('g')
-      .attr('transform', `translate(${w/2},${h/2})`);
+      .attr('transform', `translate(${margin.left},${margin.top})`);
 
-    const color = d3.scaleOrdinal(d3.schemeCategory10);
+    // scales
+    const x = d3.scaleBand()
+      .domain(pts.map(d => d.competency))
+      .range([0, innerW])
+      .padding(0.4);
 
-    // Draw each ring (one ring per area)
-    areas.forEach(([areaName, values], areaIndex) => {
-      const innerR = ringWidth * areaIndex;
-      const outerR = innerR + ringWidth * 0.9;  // 10% padding inside each ring
+    const maxVal = d3.max(pts, d => Math.max(d.performance, d.target));
+    const y = d3.scaleLinear()
+      .domain([0, maxVal * 1.1])
+      .range([innerH, 0]);
 
-      const totalGrowth = d3.sum(values, d => d.growth);
+    // axes
+    g.append('g')
+      .attr('transform', `translate(0,${innerH})`)
+      .call(d3.axisBottom(x));
 
-      const pie = d3.pie()
-        .value(d => d.growth)
-        .sort(null);
+    // draw lighthouses
+    const towers = g.selectAll('.lighthouse')
+      .data(pts)
+      .enter()
+      .append('g')
+      .attr('class', 'lighthouse')
+      .attr('transform', d => `translate(${x(d.competency) + x.bandwidth()/2},0)`);
 
-      const arc = d3.arc()
-        .innerRadius(innerR)
-        .outerRadius(outerR);
+    // tower rectangle
+    towers.append('rect')
+      .attr('x', -x.bandwidth()/4)
+      .attr('width', x.bandwidth()/2)
+      .attr('y', d => y(d.performance))
+      .attr('height', d => innerH - y(d.performance))
+      .style('fill', '#3498db');
 
-      const slices = g.selectAll(`.slice-${areaIndex}`)
-        .data(pie(values))
-        .enter()
-        .append('g')
-        .attr('class', `slice-${areaIndex}`);
+    // light at top (circle)
+    towers.append('circle')
+      .attr('cx', 0)
+      .attr('cy', d => y(d.performance))
+      .attr('r', x.bandwidth()/3)
+      .style('fill', 'yellow')
+      .style('opacity', d => d.performance >= d.target ? 1 : 0);
 
-      slices.append('path')
-        .attr('d', arc)
-        .attr('fill', (d, i) => color(i))
-        .attr('stroke', '#fff')
-        .attr('stroke-width', '1px')
-        .on('mouseover', (d, e) => {
-          this._tooltip
-            .style('opacity', 1)
-            .html(`
-              <strong>${d.data.area}</strong><br/>
-              Perf: ${d.data.performance}<br/>
-              Growth: ${d.data.growth}
-            `)
-            .style('left', (e.pageX + 5) + 'px')
-            .style('top', (e.pageY - 28) + 'px');
-        })
-        .on('mouseout', () => this._tooltip.style('opacity', 0));
+    // target marker
+    towers.append('line')
+      .attr('x1', -x.bandwidth()/4)
+      .attr('x2',  x.bandwidth()/4)
+      .attr('y1', d => y(d.target))
+      .attr('y2', d => y(d.target))
+      .style('stroke', '#e74c3c')
+      .style('stroke-dasharray', '2,2');
 
-      // Add area label in the middle of the ring
-      g.append('text')
-        .attr('text-anchor', 'middle')
-        .attr('dy', '.35em')
-        .attr('x', 0)
-        .attr('y', -innerR - ringWidth / 2)
-        .text(areaName)
-        .style('fill', '#333')
-        .style('font-size', '12px');
-    });
+    // competency labels
+    towers.append('text')
+      .attr('y', innerH + 15)
+      .attr('dy', '.71em')
+      .attr('text-anchor', 'middle')
+      .text(d => d.competency);
 
-    console.log("✅ Rendered Stacked Radial Bars");
     done();
   }
 });
