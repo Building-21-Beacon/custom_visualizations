@@ -71,7 +71,7 @@ looker.plugins.visualizations.add({
     // arc generator with spacing
     const arcGen = d3.arc().innerRadius(0)
       .outerRadius(d=>rScale(d.data.performance))
-      .padAngle(0.2).padRadius(0);
+      .padAngle(0.5).padRadius(0);
 
     // draw segments
     g.selectAll('path')
@@ -98,7 +98,7 @@ looker.plugins.visualizations.add({
       .attr('x', d=> Math.cos((d.startAngle+d.endAngle)/2 - Math.PI/2)*(rScale(d.data.performance)+labelOffset))
       .attr('y', d=> Math.sin((d.startAngle+d.endAngle)/2 - Math.PI/2)*(rScale(d.data.performance)+labelOffset))
       .attr('text-anchor', d=> ((d.startAngle+d.endAngle)/2 > Math.PI? 'end':'start'))
-      .attr('font-size',10).style('fill','#333')
+      .attr('font-size',14).style('fill','#333')
       .text(d=>d.data.label);
 
     done();
