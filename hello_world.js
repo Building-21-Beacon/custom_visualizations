@@ -114,7 +114,6 @@ looker.plugins.visualizations.add({
       .attr('x', 16).attr('y', 6).attr('dy', '0.35em')
       .text(d => d.label)
       .style('font-sizel', 16);
-    font-size: 10px
 
     done();
   }
