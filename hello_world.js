@@ -147,7 +147,7 @@ looker.plugins.visualizations.add({
       .attr('dy', '0.35em')
       .style('font-size', '18px')
       .style('fill', '#fff')
-      .style('word-wrap': 'break-word')
+      .style('word-wrap', 'break-word')
       .html(`
             <strong>${d.data.area}</strong><br/>
             Perf: ${d.data.performance}<br/>
