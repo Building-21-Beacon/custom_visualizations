@@ -1,14 +1,20 @@
 looker.plugins.visualizations.add({
-  id: "lighthouse_bars",
-  label: "Lighthouse Bars",
-  options: {},
+  id: "circular_performance_growth",
+  label: "Circular Performance & Growth",
+  options: {
+    target_value: {
+      type: "number",
+      label: "Global Target",
+      default: 7
+    }
+  },
 
   create(element, config) {
     element.innerHTML = `
       <style>
         .tooltip {
           position: absolute;
-          padding: 4px 8px;
+          padding: 6px 10px;
           font: 12px sans-serif;
           background: rgba(0,0,0,0.7);
           color: #fff;
@@ -19,11 +25,11 @@ looker.plugins.visualizations.add({
       </style>
       <div class="tooltip"></div>
     `;
-    if (typeof d3 === 'undefined' || !d3.scaleBand) {
-      const s = document.createElement('script');
-      s.src = 'https://d3js.org/d3.v6.min.js';
-      s.onload = () => this._initSvg(element);
-      document.head.appendChild(s);
+    if (typeof d3 === 'undefined' || !d3.arc) {
+      const script = document.createElement('script');
+      script.src = 'https://d3js.org/d3.v6.min.js';
+      script.onload = () => this._initSvg(element);
+      document.head.appendChild(script);
     } else {
       this._initSvg(element);
     }
@@ -41,104 +47,119 @@ looker.plugins.visualizations.add({
     this.clearErrors();
     this._svg.selectAll('*').remove();
 
+    // require 1 dimension + 2 measures
     if (queryResponse.fields.dimensions.length < 1 || queryResponse.fields.measures.length < 2) {
-      this.addError({ title: "Missing Fields", message: "Requires 1 dimension + 2 measures: Competency, Performance, Target." });
+      this.addError({
+        title: 'Missing Fields',
+        message: 'Requires 1 dimension + 2 measures: Competency, Performance, Growth.'
+      });
       return done();
     }
 
-    const dimName = queryResponse.fields.dimensions[0].name;
-    const perfName = queryResponse.fields.measures[0].name;
-    const targetName = queryResponse.fields.measures[1].name;
+    const dim = queryResponse.fields.dimensions[0].name;
+    const perf = queryResponse.fields.measures[0].name;
+    const growth = queryResponse.fields.measures[1].name;
+    const globalTarget = Number(config.target_value) || 0;
 
     const pts = data.map(d => ({
-      competency: d[dimName].value,
-      performance: +d[perfName].value,
-      target: +d[targetName].value
-    })).filter(d => d.competency && !isNaN(d.performance) && !isNaN(d.target));
+      label: d[dim].value,
+      performance: +d[perf].value,
+      growth: +d[growth].value,
+      target: globalTarget
+    })).filter(d => d.label && !isNaN(d.performance) && !isNaN(d.growth));
 
     if (!pts.length) {
-      this.addError({ title: "No Data", message: "No valid rows." });
+      this.addError({ title: 'No Data', message: 'No valid rows.' });
       return done();
     }
 
-    const w = element.clientWidth;
-    const h = element.clientHeight;
-    const margin = { top: 40, right: 20, bottom: 60, left: 20 };
-    const innerW = w - margin.left - margin.right;
-    const innerH = h - margin.top - margin.bottom;
+    const width = element.clientWidth;
+    const height = element.clientHeight;
+    const margin = 40;
+    const radius = Math.min(width, height) / 2 - margin;
 
-    const g = this._svg.attr('width', w).attr('height', h)
-      .append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+    const g = this._svg
+      .attr('width', width)
+      .attr('height', height)
+      .append('g')
+      .attr('transform', `translate(${width/2},${height/2})`);
 
-    const x = d3.scaleBand().domain(pts.map(d => d.competency)).range([0, innerW]).padding(0.4);
-    const maxVal = d3.max(pts, d => Math.max(d.performance, d.target));
-    const y = d3.scaleLinear().domain([0, maxVal * 1.1]).range([innerH, 0]);
+    const x = d3.scaleBand()
+      .domain(pts.map(d => d.label))
+      .range([0, 2 * Math.PI])
+      .padding(0.1);
 
-    g.append('g').attr('transform', `translate(0,${innerH})`).call(d3.axisBottom(x))
-      .selectAll("text").attr('dy', '0.75em');
+    const maxPerf = d3.max(pts, d => d.performance);
+    const maxVal = Math.max(maxPerf, globalTarget);
+    const rScale = d3.scaleLinear()
+      .domain([0, maxVal])
+      .range([0, radius]);
 
-    const towers = g.selectAll('.lighthouse').data(pts).enter().append('g')
-      .attr('class', 'lighthouse')
-      .attr('transform', d => `translate(${x(d.competency) + x.bandwidth()/2},0)`)
-      .on('mouseover', function(event, d) {
-        d3.select(this).select('polygon').style('fill', '#2980b9');
-        d3.select('.tooltip').style('opacity', 1).html(`<strong>${d.competency}</strong><br/>Perf: ${d.performance}<br/>Target: ${d.target}`)
-          .style('left', (event.pageX + 5) + 'px').style('top', (event.pageY - 28) + 'px');
+    const minG = d3.min(pts, d => d.growth);
+    const maxG = d3.max(pts, d => d.growth);
+    const color = d3.scaleLinear()
+      .domain([minG, (minG+maxG)/2, maxG])
+      .range(['#d73027', '#fdae61', '#1a9850']);
+
+    const perfArc = d3.arc()
+      .innerRadius(0)
+      .outerRadius(d => rScale(d.data.performance))
+      .startAngle(d => x(d.data.label))
+      .endAngle(d => x(d.data.label) + x.bandwidth())
+      .padAngle(0.01)
+      .padRadius(0);
+
+    const targetArc = d3.arc()
+      .innerRadius(rScale(globalTarget) - 2)
+      .outerRadius(rScale(globalTarget) + 2)
+      .startAngle(d => x(d.data.label))
+      .endAngle(d => x(d.data.label) + x.bandwidth());
+
+    const arcs = d3.pie().value(() => 1).sort((a,b) => x(a.label) - x(b.label))(pts);
+
+    // performance segments
+    g.selectAll('.perf')
+      .data(arcs)
+      .enter().append('path')
+      .attr('class', 'perf')
+      .attr('d', perfArc)
+      .style('fill', d => color(d.data.growth))
+      .on('mouseover', (event, d) => {
+        this._tooltip
+          .style('opacity', 1)
+          .html(`<strong>${d.data.label}</strong><br/>Perf: ${d.data.performance}<br/>Growth: ${d.data.growth}<br/>Target: ${globalTarget}`)
+          .style('left', (event.pageX + 5) + 'px')
+          .style('top', (event.pageY - 28) + 'px');
       })
-      .on('mouseout', function() {
-        d3.select(this).select('polygon').style('fill', '#3498db');
-        d3.select('.tooltip').style('opacity', 0);
-      });
+      .on('mouseout', () => this._tooltip.style('opacity', 0));
 
-    // Draw lighthouse shape (trapezoid)
-    towers.append('polygon')
-      .attr('points', d => {
-        const baseW = x.bandwidth()/2;
-        const topW = baseW * 0.4;
-        const y0 = innerH;
-        const y1 = y(d.performance);
-        return `
-          ${-baseW},${y0} ${baseW},${y0}
-          ${topW},${y1} ${-topW},${y1}
-        `;
+    // global target ring
+    g.append('path')
+      .datum({ data: {} })
+      .attr('class', 'target')
+      .attr('d', d3.arc()
+        .innerRadius(rScale(globalTarget) - 2)
+        .outerRadius(rScale(globalTarget) + 2)
+        .startAngle(0)
+        .endAngle(2 * Math.PI)
+      )
+      .style('fill', 'none')
+      .style('stroke', '#999')
+      .style('stroke-width', 2)
+      .style('opacity', 0.5);
+
+    // labels
+    g.selectAll('text')
+      .data(pts)
+      .enter().append('text')
+      .attr('text-anchor', d => (x(d.label) + x.bandwidth()/2 > Math.PI ? 'end' : 'start'))
+      .attr('transform', d => {
+        const angle = (x(d.label) + x.bandwidth()/2) - Math.PI/2;
+        const r = radius + 12;
+        return `rotate(${(angle*180/Math.PI)}) translate(${r},0)`;
       })
-      .style('fill', '#3498db');
-
-    // Add horizontal stripes for texture
-    towers.each(function(d) {
-      const t = d3.select(this);
-      const baseW = x.bandwidth()/2;
-      const y0 = innerH;
-      const y1 = y(d.performance);
-      for (let i = 1; i <= 3; i++) {
-        const yPos = y1 + (y0 - y1) * (i / 4);
-        const wStrip = baseW * (1 - i * 0.2);
-        t.append('line')
-          .attr('x1', -wStrip).attr('x2', wStrip)
-          .attr('y1', yPos).attr('y2', yPos)
-          .style('stroke', '#fff').style('stroke-width', 1);
-      }
-    });
-
-    // Light glow circle when passing target
-    towers.append('circle')
-      .attr('cx', 0)
-      .attr('cy', d => y(d.performance))
-      .attr('r', x.bandwidth()/3)
-      .style('fill', 'yellow')
-      .style('opacity', d => d.performance >= d.target ? 1 : 0);
-
-    // Target line marker
-    towers.append('line')
-      .attr('x1', -x.bandwidth()/2).attr('x2', x.bandwidth()/2)
-      .attr('y1', d => y(d.target)).attr('y2', d => y(d.target))
-      .style('stroke', '#e74c3c').style('stroke-dasharray', '4,2');
-
-    // Competency labels below
-    towers.append('text')
-      .attr('y', innerH + 20).attr('dy', '.71em')
-      .attr('text-anchor', 'middle')
-      .text(d => d.competency);
+      .text(d => d.label)
+      .attr('font-size', 10);
 
     done();
   }
