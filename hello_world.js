@@ -119,6 +119,8 @@ looker.plugins.visualizations.add({
     slices.append('path')
       .attr('d', arc)
       .attr('fill', (d,i) => color(i))
+      .attr('stroke', '#fff')       // <-- add this
+      .attr('stroke-width', '1px') 
       .on('mouseover', (d,e) => {
         console.log(d)
         console.log(e)
@@ -150,7 +152,7 @@ looker.plugins.visualizations.add({
             <strong>${d.data.area}</strong><br/>
             Perf: ${d.data.performance}<br/>
             Growth: ${d.data.growth}
-          `)
+          `);
     
 
     console.log("✅ Rendered Perf-Growth radial chart");
