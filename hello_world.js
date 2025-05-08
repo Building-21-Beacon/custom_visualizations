@@ -112,14 +112,13 @@ looker.plugins.visualizations.add({
       .append('g')
       .attr('class', 'slice');
 
-    console.log(d)
-    console.log(d.data)
-
     // draw
     slices.append('path')
       .attr('d', arc)
       .attr('fill', (d,i) => color(i))
       .on('mouseover', (e,d) => {
+        console.log(d)
+        console.log(d.data)
         this._tooltip
           .style('opacity', 1)
           .html(`
