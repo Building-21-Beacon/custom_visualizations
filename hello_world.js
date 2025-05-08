@@ -12,9 +12,12 @@ looker.plugins.visualizations.add({
         .aster-plot {
           width: 100%;
           height: 100%;
+          min-height: 400px; /* ✅ Add a minimum height */
           display: flex;
           justify-content: center;
           align-items: center;
+          box-sizing: border-box; /* ✅ Ensure padding/border don't collapse size */
+          background: rgba(0, 255, 0, 0.1); /* Light green for debugging */
         }
         .tooltip {
           position: absolute;
@@ -59,7 +62,8 @@ looker.plugins.visualizations.add({
       .append("svg")
       .attr("width", "100%")
       .attr("height", "100%")
-      .style("min-height", "400px");
+      .attr("viewBox", "0 0 600 600")  // 👈 Makes scaling work well
+      .attr("preserveAspectRatio", "xMidYMid meet");
 
     this._tooltip = d3.select(element).append("div")
       .attr("class", "tooltip");
@@ -114,6 +118,7 @@ looker.plugins.visualizations.add({
     const width = element.offsetWidth;
     const height = element.offsetHeight;
     const radius = Math.min(width, height) / 2 - 30;
+    console.log(`📐 width: ${width}, height: ${height}, radius: ${radius}`);
 
     const svg = this._svg
       .attr("width", width)
