@@ -107,7 +107,7 @@ looker.plugins.visualizations.add({
 
     // bind slices
     const slices = g.selectAll('g.slice')
-      .data(pie(pts))
+      .data(pts)
       .enter()
       .append('g')
       .attr('class', 'slice');
