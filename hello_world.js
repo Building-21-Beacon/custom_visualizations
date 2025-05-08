@@ -1,140 +1,127 @@
 looker.plugins.visualizations.add({
-  id: "progress_bar",
-  label: "Labeled Progress Bar",
+  id: "aster_plot",
+  label: "Aster Plot",
   options: {
-    bar_color: {
+    minRadius: {
+      type: "number",
+      label: "Minimum Radius",
+      default: 30
+    },
+    maxRadius: {
+      type: "number",
+      label: "Maximum Radius",
+      default: 100
+    },
+    color: {
       type: "string",
       label: "Bar Color",
       default: "#4CAF50"
-    },
-    font_size: {
-      type: "string",
-      label: "Font Size",
-      values: [
-        {"Large": "large"},
-        {"Small": "small"}
-      ],
-      display: "radio",
-      default: "large"
     }
   },
   create: function(element, config) {
     element.innerHTML = `
       <style>
-        .progress-wrapper {
-          width: 100%;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          font-family: sans-serif;
-          padding: 10px;
-        }
-        .progress-title {
-          margin-bottom: 8px;
-          font-size: 16px;
-          font-weight: bold;
+        .aster-tooltip {
+          position: absolute;
           text-align: center;
-        }
-        .progress-container {
-          width: 100%;
-          background-color: #f3f3f3;
-          border-radius: 5px;
-          overflow: hidden;
-          height: 30px;
-          display: flex;
-          align-items: center;
-          position: relative;
-        }
-        .progress-bar {
-          height: 100%;
-          text-align: center;
-          color: white;
-          line-height: 30px;
-          white-space: nowrap;
-          transition: width 0.5s;
-        }
-        .progress-text-large {
-          font-size: 18px;
-        }
-        .progress-text-small {
-          font-size: 12px;
-        }
-        .progress-scale {
-          width: 100%;
-          display: flex;
-          justify-content: space-between;
-          font-size: 12px;
-          margin-top: 5px;
-          color: #666;
+          padding: 6px;
+          font: 12px sans-serif;
+          background: lightsteelblue;
+          border: 0px;
+          border-radius: 4px;
+          pointer-events: none;
+          opacity: 0;
         }
       </style>
     `;
+    this._svg = d3.select(element)
+      .append("svg")
+      .style("width", "100%")
+      .style("height", "100%");
 
-    // Create wrapper
-    const wrapper = element.appendChild(document.createElement("div"));
-    wrapper.className = "progress-wrapper";
-
-    // Title
-    this._title = wrapper.appendChild(document.createElement("div"));
-    this._title.className = "progress-title";
-    this._title.innerText = "Progress"; // Default label
-
-    // Progress container
-    const container = wrapper.appendChild(document.createElement("div"));
-    container.className = "progress-container";
-
-    // Progress bar
-    this._progressBar = container.appendChild(document.createElement("div"));
-    this._progressBar.className = "progress-bar";
-
-    // Scale labels
-    this._scale = wrapper.appendChild(document.createElement("div"));
-    this._scale.className = "progress-scale";
-    this._scale.innerHTML = `<span>0%</span><span>100%</span>`;
+    this._tooltip = d3.select(element)
+      .append("div")
+      .attr("class", "aster-tooltip");
   },
   updateAsync: function(data, element, config, queryResponse, details, done) {
     this.clearErrors();
 
-    if (queryResponse.fields.measures.length === 0) {
-      this.addError({title: "No Measures", message: "This chart requires at least one measure."});
+    if (queryResponse.fields.dimensions.length === 0 || queryResponse.fields.measures.length === 0) {
+      this.addError({
+        title: "Missing Fields",
+        message: "This chart requires at least one dimension and one measure."
+      });
       return;
     }
 
-    // Get the first measure
-    const firstRow = data[0];
+    const width = element.clientWidth;
+    const height = element.clientHeight;
+    const radius = Math.min(width, height) / 2;
+    const minRadius = config.minRadius || 30;
+    const maxRadius = config.maxRadius || radius - 20;
+    const color = config.color || "#4CAF50";
+
+    const svg = this._svg;
+    svg.selectAll("*").remove(); // clear previous
+
+    const g = svg
+      .attr("width", width)
+      .attr("height", height)
+      .append("g")
+      .attr("transform", `translate(${width / 2}, ${height / 2})`);
+
+    const tooltip = this._tooltip;
+
+    const arc = d3.arc()
+      .innerRadius(minRadius)
+      .outerRadius(d => minRadius + (maxRadius - minRadius) * d.value / 100);
+
+    const pie = d3.pie()
+      .value(1)
+      .sort(null);
+
+    // Prepare data
+    const dimName = queryResponse.fields.dimensions[0].name;
     const measureName = queryResponse.fields.measures[0].name;
-    const measureValue = firstRow[measureName];
-    let percent = parseFloat(LookerCharts.Utils.textForCell(measureValue));
 
-    if (isNaN(percent)) {
-      this.addError({title: "Invalid Data", message: "The first measure must be a number (0-100)."});
-      return;
-    }
+    const plotData = data.map(d => ({
+      label: LookerCharts.Utils.textForCell(d[dimName]),
+      value: +LookerCharts.Utils.textForCell(d[measureName])
+    }));
 
-    percent = Math.max(0, Math.min(100, percent));
+    // Draw slices
+    const slices = g.selectAll(".arc")
+      .data(pie(plotData))
+      .enter()
+      .append("g")
+      .attr("class", "arc");
 
-    // Get the first dimension (if available) for the title
-    let titleText = "Progress";
-    if (queryResponse.fields.dimensions.length > 0) {
-      const dimensionName = queryResponse.fields.dimensions[0].name;
-      const dimensionValue = firstRow[dimensionName];
-      titleText = LookerCharts.Utils.textForCell(dimensionValue);
-    }
-    this._title.innerText = titleText;
+    slices.append("path")
+      .attr("d", arc)
+      .attr("fill", color)
+      .on("mouseover", function(event, d) {
+        tooltip
+          .style("opacity", 1)
+          .html(`<strong>${d.data.label}</strong><br>${d.data.value}%`)
+          .style("left", (event.pageX) + "px")
+          .style("top", (event.pageY - 28) + "px");
+      })
+      .on("mouseout", function() {
+        tooltip.style("opacity", 0);
+      });
 
-    // Update the bar
-    this._progressBar.style.backgroundColor = config.bar_color || "#4CAF50";
-    this._progressBar.style.width = percent + "%";
-    this._progressBar.innerText = percent + "%";
-
-    // Set font size
-    if (config.font_size === "small") {
-      this._progressBar.className = "progress-bar progress-text-small";
-    } else {
-      this._progressBar.className = "progress-bar progress-text-large";
-    }
+    // Add labels at the outer edge
+    slices.append("text")
+      .attr("transform", function(d) {
+        const [x, y] = arc.centroid(d);
+        const scale = (maxRadius + 15) / Math.sqrt(x * x + y * y);
+        return `translate(${x * scale},${y * scale})`;
+      })
+      .attr("text-anchor", "middle")
+      .attr("alignment-baseline", "middle")
+      .style("font-size", "10px")
+      .text(d => d.data.label);
 
     done();
   }
 });
-
