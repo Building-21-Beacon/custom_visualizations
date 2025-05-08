@@ -47,12 +47,8 @@ looker.plugins.visualizations.add({
     this.clearErrors();
     this._svg.selectAll('*').remove();
 
-    // require 1 dimension + 2 measures
     if (queryResponse.fields.dimensions.length < 1 || queryResponse.fields.measures.length < 2) {
-      this.addError({
-        title: 'Missing Fields',
-        message: 'Requires 1 dimension + 2 measures: Competency, Performance, Growth.'
-      });
+      this.addError({ title: 'Missing Fields', message: 'Requires 1 dimension + 2 measures: Competency, Performance, Growth.' });
       return done();
     }
 
@@ -64,8 +60,7 @@ looker.plugins.visualizations.add({
     const pts = data.map(d => ({
       label: d[dim].value,
       performance: +d[perf].value,
-      growth: +d[growth].value,
-      target: globalTarget
+      growth: +d[growth].value
     })).filter(d => d.label && !isNaN(d.performance) && !isNaN(d.growth));
 
     if (!pts.length) {
@@ -84,50 +79,53 @@ looker.plugins.visualizations.add({
       .append('g')
       .attr('transform', `translate(${width/2},${height/2})`);
 
+    // angular scale
     const x = d3.scaleBand()
       .domain(pts.map(d => d.label))
       .range([0, 2 * Math.PI])
-      .padding(0.1);
+      .padding(0.05);
 
+    // radial scale for performance and target
     const maxPerf = d3.max(pts, d => d.performance);
     const maxVal = Math.max(maxPerf, globalTarget);
-    const rScale = d3.scaleLinear()
-      .domain([0, maxVal])
-      .range([0, radius]);
+    const rScale = d3.scaleLinear().domain([0, maxVal]).range([0, radius]);
 
+    // thickness scale for growth
     const minG = d3.min(pts, d => d.growth);
     const maxG = d3.max(pts, d => d.growth);
+    const thickness = d3.scaleLinear().domain([minG, maxG]).range([5, radius*0.1]);
+
+    // color scale
     const color = d3.scaleLinear()
       .domain([minG, (minG+maxG)/2, maxG])
       .range(['#d73027', '#fdae61', '#1a9850']);
 
-    const perfArc = d3.arc()
-      .innerRadius(0)
-      .outerRadius(d => rScale(d.data.performance))
-      .startAngle(d => x(d.data.label))
-      .endAngle(d => x(d.data.label) + x.bandwidth())
-      .padAngle(0.01)
-      .padRadius(0);
+    const pie = d3.pie().value(() => 1).sort((a, b) => x(a.label) - x(b.label));
+    const arcs = pie(pts);
 
-    const targetArc = d3.arc()
-      .innerRadius(rScale(globalTarget) - 2)
-      .outerRadius(rScale(globalTarget) + 2)
-      .startAngle(d => x(d.data.label))
-      .endAngle(d => x(d.data.label) + x.bandwidth());
-
-    const arcs = d3.pie().value(() => 1).sort((a,b) => x(a.label) - x(b.label))(pts);
-
-    // performance segments
+    // draw performance arcs with growth-thickness and target-based brightness
     g.selectAll('.perf')
       .data(arcs)
       .enter().append('path')
       .attr('class', 'perf')
-      .attr('d', perfArc)
+      .attr('d', d => {
+        const pR = rScale(d.data.performance);
+        const t = thickness(d.data.growth);
+        const inner = Math.max(0, pR - t/2);
+        const outer = pR + t/2;
+        return d3.arc()
+          .innerRadius(inner)
+          .outerRadius(outer)
+          .startAngle(x(d.data.label))
+          .endAngle(x(d.data.label) + x.bandwidth())
+          .padAngle(0.01)();
+      })
       .style('fill', d => color(d.data.growth))
+      .style('opacity', d => d.data.performance >= globalTarget ? 1 : 0.3)
       .on('mouseover', (event, d) => {
         this._tooltip
           .style('opacity', 1)
-          .html(`<strong>${d.data.label}</strong><br/>Perf: ${d.data.performance}<br/>Growth: ${d.data.growth}<br/>Target: ${globalTarget}`)
+          .html(`<strong>${d.data.label}</strong><br/>Performance: ${d.data.performance}<br/>Growth: ${d.data.growth}<br/>Target: ${globalTarget}`)
           .style('left', (event.pageX + 5) + 'px')
           .style('top', (event.pageY - 28) + 'px');
       })
@@ -135,11 +133,10 @@ looker.plugins.visualizations.add({
 
     // global target ring
     g.append('path')
-      .datum({ data: {} })
       .attr('class', 'target')
       .attr('d', d3.arc()
-        .innerRadius(rScale(globalTarget) - 2)
-        .outerRadius(rScale(globalTarget) + 2)
+        .innerRadius(rScale(globalTarget) - 1)
+        .outerRadius(rScale(globalTarget) + 1)
         .startAngle(0)
         .endAngle(2 * Math.PI)
       )
@@ -148,19 +145,23 @@ looker.plugins.visualizations.add({
       .style('stroke-width', 2)
       .style('opacity', 0.5);
 
-    // labels
-    g.selectAll('text')
-      .data(pts)
+    // labels inside arcs
+    g.selectAll('.label')
+      .data(arcs)
       .enter().append('text')
-      .attr('text-anchor', d => (x(d.label) + x.bandwidth()/2 > Math.PI ? 'end' : 'start'))
+      .attr('class', 'label')
       .attr('transform', d => {
-        const angle = (x(d.label) + x.bandwidth()/2) - Math.PI/2;
-        const r = radius + 12;
-        return `rotate(${(angle*180/Math.PI)}) translate(${r},0)`;
+        const pR = rScale(d.data.performance);
+        const angle = x(d.data.label) + x.bandwidth()/2 - Math.PI/2;
+        return `rotate(${angle*180/Math.PI}) translate(${pR},0)`;
       })
-      .text(d => d.label)
-      .attr('font-size', 10);
+      .attr('text-anchor', 'middle')
+      .attr('dy', '0.35em')
+      .attr('font-size', 10)
+      .style('fill', '#fff')
+      .text(d => d.data.label);
 
     done();
   }
 });
+
