@@ -101,7 +101,7 @@ looker.plugins.visualizations.add({
     // arc: radius ∝ growth
     const arc = d3.arc()
       .innerRadius(innerR)
-      .outerRadius(d => innerR + (d.growth / maxGrowth) * (outerMax - innerR));
+      .outerRadius(d => innerR + (d.data.growth / maxGrowth) * (outerMax - innerR));
 
     const color = d3.scaleOrdinal(d3.schemeCategory10);
 
