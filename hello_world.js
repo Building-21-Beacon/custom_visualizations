@@ -8,6 +8,7 @@ looker.plugins.visualizations.add({
     element.innerHTML = `
       <style>
         .tooltip {
+          width: 15%;
           position: absolute;
           padding: 4px 8px;
           font: 12px sans-serif;
@@ -142,7 +143,7 @@ looker.plugins.visualizations.add({
       })
       .attr('text-anchor', 'middle')
       .attr('dy', '0.35em')
-      .style('font-size', '10px')
+      .style('font-size', '18px')
       .style('fill', '#fff')
       .text(d => d.data.area);
 
