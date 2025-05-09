@@ -74,7 +74,7 @@ looker.plugins.visualizations.add({
     const colorScale = d3.scaleOrdinal().domain(pts.map(d=>d.label)).range(palette);
 
     // compute arcs
-    const pieGen = d3.pie().value(d=>d.growth).sort((a,b)=>d3.ascending(a.label,b.label)).padArc(.03);
+    const pieGen = d3.pie().value(d=>d.growth).sort((a,b)=>d3.ascending(a.label,b.label)).padAngle(.03);
     const arcs = pieGen(pts);
 
     // draw arcs
@@ -88,7 +88,7 @@ looker.plugins.visualizations.add({
       })
       .on('mouseover', (e,d)=>{
         this._tooltip.style('opacity',1)
-          .html(`<strong>${d.data.label}</strong><br/>Perf: ${d.data.performance}<br/>Growth: ${d.data.growth}<br/>Target: ${target}`)
+          .html(`<strong>${d.data.label}</strong><br/>Performance: ${d.data.performance}<br/>Growth: ${d.data.growth}<br/>Target: ${target}`)
           .style('left',e.pageX+5+'px').style('top',e.pageY-28+'px');
       }).on('mouseout', ()=>this._tooltip.style('opacity',0));
 
