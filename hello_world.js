@@ -20,15 +20,6 @@ looker.plugins.visualizations.add({
           transition: opacity 0.2s ease, transform 0.1s ease;
           box-shadow: 0 4px 8px rgba(0,0,0,0.3);
         }
-        .tooltip::after {
-          content: '';
-          position: absolute;
-          bottom: -6px;
-          left: 12px;
-          border-width: 6px 6px 0 6px;
-          border-style: solid;
-          border-color: rgba(50,50,50,0.9) transparent transparent transparent;
-        }
         .legend-item text { font-size: 12px; fill: #333; }
       </style>
       <div class="tooltip"></div>
@@ -96,7 +87,7 @@ looker.plugins.visualizations.add({
     const arcGen = d3.arc()
       .innerRadius(innerHole)
       .outerRadius(d => rScale(d.data.performance))
-      .padAngle(0.05)
+      .padAngle(0.03)
       .padRadius(radius);
 
     chart.selectAll('path')
@@ -134,16 +125,26 @@ looker.plugins.visualizations.add({
       .style('opacity', 0.5);
 
     const labelOffset = 20;
-    chart.selectAll('.label')
-      .data(arcs).enter().append('text')
-      .attr('x', d => Math.cos((d.startAngle + d.endAngle) / 2 - Math.PI/2) * (rScale(d.data.performance) + labelOffset))
-      .attr('y', d => Math.sin((d.startAngle + d.endAngle) / 2 - Math.PI/2) * (rScale(d.data.performance) + labelOffset))
+    const labelGroups = chart.selectAll('.label-group')
+      .data(arcs).enter().append('g')
+      .attr('class', 'label-group');
+    
+    labelGroups.append('line')
+      .attr('x1', d => Math.cos((d.startAngle + d.endAngle) / 2 - Math.PI/2) * rScale(d.data.performance))
+      .attr('y1', d => Math.sin((d.startAngle + d.endAngle) / 2 - Math.PI/2) * rScale(d.data.performance))
+      .attr('x2', d => Math.cos((d.startAngle + d.endAngle) / 2 - Math.PI/2) * (rScale(d.data.performance) + labelOffset))
+      .attr('y2', d => Math.sin((d.startAngle + d.endAngle) / 2 - Math.PI/2) * (rScale(d.data.performance) + labelOffset))
+      .style('stroke', '#666')
+      .style('stroke-width', '1px');
+
+    labelGroups.append('text')
+      .attr('x', d => Math.cos((d.startAngle + d.endAngle) / 2 - Math.PI/2) * (rScale(d.data.performance) + labelOffset + 4))
+      .attr('y', d => Math.sin((d.startAngle + d.endAngle) / 2 - Math.PI/2) * (rScale(d.data.performance) + labelOffset + 4))
       .attr('text-anchor', d => ((d.startAngle + d.endAngle) / 2) > Math.PI ? 'end' : 'start')
-      .text(d => d.data.label)
       .attr('font-size', '16px')
-      .attr('font-weight','normal')
       .attr('font-family', 'Poppins')
-      .attr('fill', '#333');
+      .attr('fill', '#333')
+      .text(d => d.data.label);
 
     const legendG = svg.append('g').attr('class', 'legend').attr('transform', `translate(${margin},${margin})`);
     legendG.selectAll('.legend-item')
@@ -152,13 +153,12 @@ looker.plugins.visualizations.add({
       .attr('transform', (d,i) => `translate(0, ${i * 18})`)
       .call(g => {
         g.append('rect')
-         .attr('width', 16).attr('height', 16)
+         .attr('width', 22).attr('height', 22)
          .style('fill', d => colorScale(d.label));
         g.append('text')
          .attr('x', 20).attr('y', 8)
          .attr('dy', '0.35em')
-         .attr('font-weight','bold')
-         .attr('font-size', '16px')
+         .attr('font-size', '18px')
          .attr('font-family', 'Poppins')
          .text(d => d.label);
       });
