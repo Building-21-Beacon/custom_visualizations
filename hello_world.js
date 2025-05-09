@@ -11,7 +11,7 @@ looker.plugins.visualizations.add({
         .tooltip {
           position: absolute;
           padding: 8px 12px;
-          font: 14px sans-serif;
+          font: 14px Roboto sans-serif;
           background: rgba(50, 50, 50, 0.9);
           color: #fff;
           border-radius: 4px;
@@ -149,7 +149,9 @@ looker.plugins.visualizations.add({
         g.append('text')
          .attr('x', 20).attr('y', 8)
          .attr('dy', '0.35em')
-         .attr('font-size', '10px')
+         .attr('font-weight','bold')
+         .attr('font-size', '14px')
+         .attr('font-family', 'Poppins')
          .text(d => d.label);
       });
 
