@@ -1,54 +1,20 @@
 looker.plugins.visualizations.add({
-  id: "horizontal_performance_growth",
-  label: "Horizontal Performance & Growth",
+  id: "circular_performance_growth",
+  label: "Circular Performance & Growth",
   options: {
-    target_value: { type: "number", label: "Target Value", default: 7 }
+    target_value: { type: "number", label: "Global Target", default: 7 }
   },
-
-  create(element, config) {
-    // Inject scoped styles
+  create(element) {
     element.innerHTML = `
       <style>
-        .hpvg-tooltip {
-          position: absolute;
-          padding: 6px 10px;
-          font: 14px sans-serif;
-          background: rgba(0,0,0,0.7);
-          color: #fff;
-          border-radius: 4px;
-          pointer-events: none;
-          opacity: 0;
-          transition: opacity 0.2s ease-in-out;
-        }
-        .hpvg-chart .axis path,
-        .hpvg-chart .axis line {
-          stroke: #ccc;
-        }
-        .hpvg-chart .grid line {
-          stroke: #eee;
-          shape-rendering: crispEdges;
-        }
-        .hpvg-bar-base {
-          fill: #6baed6;
-        }
-        .hpvg-bar-growth {
-          fill: #2171b5;
-        }
-        .hpvg-target-line {
-          stroke: #e6550d;
-          stroke-dasharray: 4 4;
-          stroke-width: 2;
-        }
-        .hpvg-label {
-          font: 12px sans-serif;
-          fill: #333;
-        }
+        .tooltip { position: absolute; padding: 6px 10px; font:12px sans-serif;
+                   background: rgba(0,0,0,0.7); color: #fff; border-radius:4px;
+                   pointer-events:none; opacity:0; }
+        .legend-item text { font-size: 10px; fill: #333; }
       </style>
-      <div class="hpvg-tooltip"></div>
+      <div class="tooltip"></div>
     `;
-
-    // Load D3 if necessary
-    if (typeof d3 === 'undefined' || !d3.scaleBand) {
+    if (typeof d3 === 'undefined' || !d3.arc) {
       const script = document.createElement('script');
       script.src = 'https://d3js.org/d3.v6.min.js';
       script.onload = () => this._initSvg(element);
@@ -57,190 +23,98 @@ looker.plugins.visualizations.add({
       this._initSvg(element);
     }
   },
-
   _initSvg(element) {
-    // Create the SVG container
-    this._svg = d3.select(element)
-      .append('svg')
-      .classed('hpvg-chart', true)
-      .style('width', '100%')
-      .style('height', '100%');
-    this._tooltip = d3.select(element).select('.hpvg-tooltip');
-
-    // Make chart responsive
-    window.addEventListener('resize', () => {
-      // Debounce resize events
-      clearTimeout(this._resizeTimer);
-      this._resizeTimer = setTimeout(() => {
-        this.updateAsync(this._lastData, this._lastElement, this._lastConfig, this._lastQR, {}, () => {});
-      }, 200);
-    });
+    this._svg = d3.select(element).append('svg')
+      .style('width','100%').style('height','100%');
+    this._tooltip = d3.select(element).select('.tooltip');
   },
-
   updateAsync(data, element, config, queryResponse, details, done) {
-    this._lastData = data;
-    this._lastElement = element;
-    this._lastConfig = config;
-    this._lastQR = queryResponse;
-
     this.clearErrors();
     if (!this._svg) this._initSvg(element);
     this._svg.selectAll('*').remove();
 
-    // Validate fields
     if (queryResponse.fields.dimensions.length < 1 || queryResponse.fields.measures.length < 2) {
-      this.addError({ title: 'Missing Fields', message: 'Requires 1 dimension + 2 measures: Competency, Performance, Growth.' });
+      this.addError({ title:'Missing Fields', message:'1 dimension + 2 measures required: Competency, Performance, Growth.' });
       return done();
     }
 
     const dim = queryResponse.fields.dimensions[0].name;
-    const perfField = queryResponse.fields.measures[0].name;
-    const growthField = queryResponse.fields.measures[1].name;
+    const perf = queryResponse.fields.measures[0].name;
+    const growth = queryResponse.fields.measures[1].name;
     const target = +config.target_value || 0;
 
-    // Process data
-    let pts = data.map(d => ({
-      competency: d[dim].value,
-      performance: +d[perfField].value,
-      growth: +d[growthField].value
-    })).filter(d => d.competency && isFinite(d.performance) && isFinite(d.growth));
-    if (!pts.length) {
-      this.addError({ title: 'No Data', message: 'No valid rows.' });
-      return done();
-    }
+    const pts = data.map(d => ({
+      label: d[dim].value,
+      performance: +d[perf].value,
+      growth: +d[growth].value
+    })).filter(d => d.label && isFinite(d.performance) && isFinite(d.growth));
+    if (!pts.length) { this.addError({ title:'No Data', message:'No valid rows.' }); return done(); }
 
-    // Sort by performance descending
-    pts = pts.sort((a, b) => b.performance - a.performance);
+    const width = element.clientWidth;
+    const height = element.clientHeight;
+    const margin = 20;
+    const radius = Math.max(0, Math.min(width, height)/2 - margin);
 
-    // Dimensions
-    const margin = { top: 60, right: 30, bottom: 40, left: 140 };
-    const totalW = element.clientWidth;
-    const totalH = element.clientHeight;
-    const width = totalW - margin.left - margin.right;
-    const height = totalH - margin.top - margin.bottom;
+    // base SVG
+    const svg = this._svg.attr('width', width).attr('height', height);
+    const chartG = svg.append('g').attr('transform', `translate(${width/2},${height/2})`);
 
-    // Create container group
-    const svg = this._svg.attr('width', totalW).attr('height', totalH);
-    const chart = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+    // scales
+    const maxPerf = d3.max(pts, d=>d.performance);
+    const maxVal = Math.max(maxPerf, target);
+    const rScale = d3.scaleLinear().domain([0, maxVal]).range([0, radius]);
 
-    // Scales
-    const y = d3.scaleBand()
-      .domain(pts.map(d => d.competency))
-      .range([0, height])
-      .padding(0.2);
-    const xMax = d3.max(pts, d => Math.max(d.performance, target));
-    const x = d3.scaleLinear()
-      .domain([0, xMax])
-      .range([0, width])
-      .nice();
+    // color scale
+    const palette = d3.schemeCategory10;
+    const colorScale = d3.scaleOrdinal().domain(pts.map(d=>d.label)).range(palette);
 
-    // Gridlines
-    chart.append('g')
-      .attr('class', 'grid')
-      .call(d3.axisBottom(x)
-        .ticks(5)
-        .tickSize(height)
-        .tickFormat('')
-      )
-      .attr('transform', `translate(0,${height})`);
+    // compute arcs
+    const pieGen = d3.pie().value(d=>d.growth).sort((a,b)=>d3.ascending(a.label,b.label));
+    const arcs = pieGen(pts);
 
-    // Axes
-    chart.append('g')
-      .attr('class', 'axis')
-      .call(d3.axisLeft(y))
-      .selectAll('text')
-        .attr('font-size', '14px');
+    // draw arcs
+    const arcGen = d3.arc().innerRadius(0).outerRadius(d=>rScale(d.data.performance)).padAngle(0.03).padRadius(radius);
+    chartG.selectAll('path')
+      .data(arcs).enter().append('path')
+      .attr('d', arcGen)
+      .style('fill', d=> {
+        const base = colorScale(d.data.label);
+        return d.data.performance >= target ? d3.color(base).darker(2).formatHex() : base;
+      })
+      .on('mouseover', (e,d)=>{
+        this._tooltip.style('opacity',1)
+          .html(`<strong>${d.data.label}</strong><br/>Perf: ${d.data.performance}<br/>Growth: ${d.data.growth}<br/>Target: ${target}`)
+          .style('left',e.pageX+5+'px').style('top',e.pageY-28+'px');
+      }).on('mouseout', ()=>this._tooltip.style('opacity',0));
 
-    chart.append('g')
-      .attr('class', 'axis')
-      .attr('transform', `translate(0,${height})`)
-      .call(d3.axisBottom(x).ticks(5))
-      .selectAll('text')
-        .attr('font-size', '14px');
+    // target circle
+    chartG.append('circle')
+      .attr('r', rScale(target))
+      .style('fill','none').style('stroke','#999').style('stroke-width',2).style('opacity',0.5);
 
-    // Bars: base and growth with transitions
-    const bars = chart.selectAll('.hpvg-bar')
-      .data(pts)
-      .enter()
-      .append('g')
-      .attr('class', 'hpvg-bar')
-      .attr('transform', d => `translate(0,${y(d.competency)})`);
+    // labels outside slices
+    const labelOffset = 20;
+    chartG.selectAll('.label')
+      .data(arcs).enter().append('text')
+      .attr('x', d => Math.cos((d.startAngle+d.endAngle)/2 - Math.PI/2) * (rScale(d.data.performance) + labelOffset))
+      .attr('y', d => Math.sin((d.startAngle+d.endAngle)/2 - Math.PI/2) * (rScale(d.data.performance) + labelOffset))
+      .attr('text-anchor', d => ((d.startAngle+d.endAngle)/2) > Math.PI ? 'end' : 'start')
+      .text(d => d.data.label);
 
-    bars.append('rect')
-      .attr('class', 'hpvg-bar-base')
-      .attr('x', 0)
-      .attr('height', y.bandwidth())
-      .attr('width', 0)
-      .transition().duration(800).ease(d3.easeCubic)
-      .attr('width', d => x(d.performance - d.growth));
-
-    bars.append('rect')
-      .attr('class', 'hpvg-bar-growth')
-      .attr('x', d => x(d.performance - d.growth))
-      .attr('height', y.bandwidth())
-      .attr('width', 0)
-      .transition().duration(800).ease(d3.easeCubic)
-      .attr('width', d => x(d.growth));
-
-    // Data labels at end of bars
-    bars.append('text')
-      .attr('class', 'hpvg-label')
-      .attr('x', d => x(d.performance) + 6)
-      .attr('y', y.bandwidth()/2)
-      .attr('dy', '0.35em')
-      .text(d => d.performance)
-      .attr('opacity', 0)
-      .transition().delay(800).duration(400)
-      .attr('opacity', 1);
-
-    // Target line
-    chart.append('line')
-      .attr('class', 'hpvg-target-line')
-      .attr('x1', x(target))
-      .attr('x2', x(target))
-      .attr('y1', 0)
-      .attr('y2', height);
-
-    // Legend
-    const legendData = [
-      { label: 'Base Performance', color: '#6baed6' },
-      { label: 'Growth', color: '#2171b5' },
-      { label: `Target (${target})`, color: '#e6550d', shape: 'line' }
-    ];
-
-    const legend = svg.append('g')
-      .attr('transform', `translate(${margin.left}, ${margin.top - 40})`);
-
-    const item = legend.selectAll('.legend-item')
-      .data(legendData)
-      .enter().append('g')
-      .attr('class', 'legend-item')
-      .attr('transform', (d,i) => `translate(${i * 180}, 0)`);
-
-    item.each(function(d) {
-      const g = d3.select(this);
-      if (d.shape === 'line') {
-        g.append('line')
-          .attr('x1', 0).attr('x2', 20)
-          .attr('y1', 6).attr('y2', 6)
-          .style('stroke', d.color)
-          .style('stroke-width', 2)
-          .style('stroke-dasharray', '4 4');
-      } else {
-        g.append('rect')
-          .attr('width', 16)
-          .attr('height', 16)
-          .style('fill', d.color);
-      }
-      g.append('text')
-        .attr('x', d.shape === 'line' ? 24 : 20)
-        .attr('y', 8)
-        .attr('dy', '0.35em')
-        .attr('font-size', '14px')
-        .text(d.label);
-    });
+    // LEGEND
+    const legendG = svg.append('g').attr('class','legend')
+      .attr('transform', `translate(${margin}, ${margin})`);
+    const legendItems = legendG.selectAll('.legend-item')
+      .data(pts).enter().append('g').attr('class','legend-item')
+      .attr('transform', (d,i) => `translate(0, ${i * 18})`);
+    legendItems.append('rect')
+      .attr('width', 16).attr('height', 16)
+      .style('fill', d => colorScale(d.label));
+    legendItems.append('text')
+      .attr('x', 16).attr('y', 6).attr('dy', '0.35em')
+      .text(d => d.label)
+      .style('font-sizel', 16);
 
     done();
   }
 });
-
