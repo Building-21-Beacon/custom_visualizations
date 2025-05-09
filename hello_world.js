@@ -7,9 +7,14 @@ looker.plugins.visualizations.add({
   create(element) {
     element.innerHTML = `
       <style>
-        .tooltip { position: absolute; padding: 6px 10px; font:12px sans-serif;
-                   background: rgba(0,0,0,0.7); color: #fff; border-radius:4px;
-                   pointer-events:none; opacity:0; }
+        .tooltip {
+          position: absolute;
+          padding: 6px 10px;
+          font:12px sans-serif;
+          background: rgba(0,0,0,0.7);
+          color: #fff; border-radius:4px;
+          pointer-events:none; opacity:0; 
+        }
         .legend-item text { font-size: 10px; fill: #333; }
       </style>
       <div class="tooltip"></div>
@@ -69,11 +74,11 @@ looker.plugins.visualizations.add({
     const colorScale = d3.scaleOrdinal().domain(pts.map(d=>d.label)).range(palette);
 
     // compute arcs
-    const pieGen = d3.pie().value(d=>d.growth).sort((a,b)=>d3.ascending(a.label,b.label));
+    const pieGen = d3.pie().value(d=>d.growth).sort((a,b)=>d3.ascending(a.label,b.label)).padArc(.03);
     const arcs = pieGen(pts);
 
     // draw arcs
-    const arcGen = d3.arc().innerRadius(0).outerRadius(d=>rScale(d.data.performance)).padAngle(0.03).padRadius(radius);
+    const arcGen = d3.arc().innerRadius(0).outerRadius(d=>rScale(d.data.performance));
     chartG.selectAll('path')
       .data(arcs).enter().append('path')
       .attr('d', arcGen)
