@@ -11,7 +11,7 @@ looker.plugins.visualizations.add({
         .tooltip {
           position: absolute;
           padding: 8px 12px;
-          font: 14px Roboto sans-serif;
+          font: 14px Poppins sans-serif;
           background: rgba(50, 50, 50, 0.9);
           color: #fff;
           border-radius: 4px;
@@ -134,7 +134,9 @@ looker.plugins.visualizations.add({
       .attr('y', d => Math.sin((d.startAngle + d.endAngle) / 2 - Math.PI/2) * (rScale(d.data.performance) + labelOffset))
       .attr('text-anchor', d => ((d.startAngle + d.endAngle) / 2) > Math.PI ? 'end' : 'start')
       .text(d => d.data.label)
-      .attr('font-size', '12px')
+      .attr('font-size', '16px')
+      .attr('font-weight','bold')
+      .attr('font-family', 'Poppins')
       .attr('fill', '#333');
 
     const legendG = svg.append('g').attr('class', 'legend').attr('transform', `translate(${margin},${margin})`);
@@ -150,7 +152,7 @@ looker.plugins.visualizations.add({
          .attr('x', 20).attr('y', 8)
          .attr('dy', '0.35em')
          .attr('font-weight','bold')
-         .attr('font-size', '14px')
+         .attr('font-size', '16px')
          .attr('font-family', 'Poppins')
          .text(d => d.label);
       });
