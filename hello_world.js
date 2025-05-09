@@ -124,7 +124,7 @@ looker.plugins.visualizations.add({
       .attr('r', rScale(target))
       .style('fill', 'none')
       .style('stroke', '#999')
-      .style('stroke-width', 2)
+      .style('stroke-width', 3)
       .style('opacity', 0.5);
 
     chart.append('text')
