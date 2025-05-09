@@ -17,7 +17,7 @@ looker.plugins.visualizations.add({
           border-radius: 4px;
           pointer-events: none;
           opacity: 0;
-          transition: opacity 0.2s ease-in-out;
+          transition: opacity 0.2s ease, transform 0.1s ease;
           box-shadow: 0 4px 8px rgba(0,0,0,0.3);
         }
         .tooltip::after {
@@ -115,10 +115,16 @@ looker.plugins.visualizations.add({
             `Growth: ${d.data.growth}<br/>` +
             `Target: ${target}`
           )
-          .style('left', (event.pageX + 12) + 'px')
-          .style('top', (event.pageY - 50) + 'px');
+          .style('transform',
+           `translate(${e.pageX+12}px, ${e.pageY-50}px)`)
       })
-      .on('mouseout', () => this._tooltip.style('opacity', 0));
+      .on('mouseout', () => this._tooltip.style('opacity', 0))
+      .on('mousemove', (e, d) => {
+       this._tooltip
+         .style('transform',
+           `translate(${e.pageX+12}px, ${e.pageY-50}px)`
+         );
+       });
 
     chart.append('circle')
       .attr('r', rScale(target))
@@ -126,14 +132,6 @@ looker.plugins.visualizations.add({
       .style('stroke', '#999')
       .style('stroke-width', 3)
       .style('opacity', 0.5);
-
-    chart.append('text')
-      .attr('x', 0)
-      .attr('y', -rScale(target) - 10)       // 10px above the ring
-      .attr('text-anchor', 'middle')
-      .attr('font-size', '12px')
-      .attr('fill', '#5D8BF4')
-      .text(`Target: ${target}`);
 
     const labelOffset = 20;
     chart.selectAll('.label')
