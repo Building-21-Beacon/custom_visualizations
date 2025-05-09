@@ -4,16 +4,30 @@ looker.plugins.visualizations.add({
   options: {
     target_value: { type: "number", label: "Global Target", default: 7 }
   },
-  create(element) {
+
+  create(element, config) {
     element.innerHTML = `
       <style>
         .tooltip {
           position: absolute;
-          padding: 6px 10px;
-          font:12px sans-serif;
-          background: rgba(0,0,0,0.7);
-          color: #fff; border-radius:4px;
-          pointer-events:none; opacity:0; 
+          padding: 8px 12px;
+          font: 14px sans-serif;
+          background: rgba(0, 0, 0, 0.75);
+          color: #fff;
+          border-radius: 4px;
+          pointer-events: none;
+          opacity: 0;
+          transition: opacity 0.15s ease-in-out;
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        }
+        .tooltip::after {
+          content: '';
+          position: absolute;
+          bottom: -6px;
+          left: 10px;
+          border-width: 6px 6px 0 6px;
+          border-style: solid;
+          border-color: rgba(0,0,0,0.75) transparent transparent transparent;
         }
         .legend-item text { font-size: 10px; fill: #333; }
       </style>
@@ -28,18 +42,22 @@ looker.plugins.visualizations.add({
       this._initSvg(element);
     }
   },
+
   _initSvg(element) {
-    this._svg = d3.select(element).append('svg')
-      .style('width','100%').style('height','100%');
+    this._svg = d3.select(element)
+      .append('svg')
+      .style('width', '100%')
+      .style('height', '100%');
     this._tooltip = d3.select(element).select('.tooltip');
   },
+
   updateAsync(data, element, config, queryResponse, details, done) {
     this.clearErrors();
     if (!this._svg) this._initSvg(element);
     this._svg.selectAll('*').remove();
 
     if (queryResponse.fields.dimensions.length < 1 || queryResponse.fields.measures.length < 2) {
-      this.addError({ title:'Missing Fields', message:'1 dimension + 2 measures required: Competency, Performance, Growth.' });
+      this.addError({ title: 'Missing Fields', message: 'Requires 1 dimension + 2 measures: Competency, Performance, Growth.' });
       return done();
     }
 
@@ -53,73 +71,86 @@ looker.plugins.visualizations.add({
       performance: +d[perf].value,
       growth: +d[growth].value
     })).filter(d => d.label && isFinite(d.performance) && isFinite(d.growth));
-    if (!pts.length) { this.addError({ title:'No Data', message:'No valid rows.' }); return done(); }
+    if (!pts.length) { this.addError({ title: 'No Data', message: 'No valid rows.' }); return done(); }
 
     const width = element.clientWidth;
     const height = element.clientHeight;
     const margin = 20;
-    const radius = Math.max(0, Math.min(width, height)/2 - margin);
+    const radius = Math.max(0, Math.min(width, height) / 2 - margin);
 
-    // base SVG
     const svg = this._svg.attr('width', width).attr('height', height);
-    const chartG = svg.append('g').attr('transform', `translate(${width/2},${height/2})`);
+    const chart = svg.append('g').attr('transform', `translate(${width/2},${height/2})`);
 
-    // scales
-    const maxPerf = d3.max(pts, d=>d.performance);
+    const maxPerf = d3.max(pts, d => d.performance);
     const maxVal = Math.max(maxPerf, target);
     const rScale = d3.scaleLinear().domain([0, maxVal]).range([0, radius]);
 
-    // color scale
-    const palette = d3.schemeCategory10;
-    const colorScale = d3.scaleOrdinal().domain(pts.map(d=>d.label)).range(palette);
+    const colorScale = d3.scaleOrdinal(d3.schemeCategory10).domain(pts.map(d => d.label));
 
-    // compute arcs
-    const pieGen = d3.pie().value(d=>d.growth).sort((a,b)=>d3.ascending(a.label,b.label)).padAngle(.03);
+    const pieGen = d3.pie().value(d => d.growth).sort((a, b) => d3.ascending(a.label, b.label));
     const arcs = pieGen(pts);
 
-    // draw arcs
-    const arcGen = d3.arc().innerRadius(0).outerRadius(d=>rScale(d.data.performance));
-    chartG.selectAll('path')
+    const arcGen = d3.arc()
+      .innerRadius(0)
+      .outerRadius(d => rScale(d.data.performance))
+      .padAngle(0.05)
+      .padRadius(radius);
+
+    chart.selectAll('path')
       .data(arcs).enter().append('path')
       .attr('d', arcGen)
-      .style('fill', d=> {
+      .style('fill', d => {
         const base = colorScale(d.data.label);
-        return d.data.performance >= target ? d3.color(base).darker(2).formatHex() : base;
+        return d.data.performance >= target ? d3.color(base).darker(1).formatHex() : base;
       })
-      .on('mouseover', (e,d)=>{
-        this._tooltip.style('opacity',1)
-          .html(`<strong>${d.data.label}</strong><br/>Performance: ${d.data.performance}<br/>Growth: ${d.data.growth}<br/>Target: ${target}`)
-          .style('left',e.pageX+5+'px').style('top',e.pageY-28+'px');
-      }).on('mouseout', ()=>this._tooltip.style('opacity',0));
+      .on('mouseover', (event, d) => {
+        this._tooltip
+          .style('opacity', 1)
+          .html(
+            `<strong>${d.data.label}</strong><br/>` +
+            `Performance: ${d.data.performance}<br/>` +
+            `Growth: ${d.data.growth}<br/>` +
+            `Target: ${target}`
+          )
+          .style('left', (event.pageX + 10) + 'px')
+          .style('top', (event.pageY - 40) + 'px');
+      })
+      .on('mouseout', () => this._tooltip.style('opacity', 0));
 
-    // target circle
-    chartG.append('circle')
+    chart.append('circle')
       .attr('r', rScale(target))
-      .style('fill','none').style('stroke','#999').style('stroke-width',2).style('opacity',0.5);
+      .style('fill', 'none')
+      .style('stroke', '#999')
+      .style('stroke-width', 2)
+      .style('opacity', 0.5);
 
-    // labels outside slices
     const labelOffset = 20;
-    chartG.selectAll('.label')
+    chart.selectAll('.label')
       .data(arcs).enter().append('text')
-      .attr('x', d => Math.cos((d.startAngle+d.endAngle)/2 - Math.PI/2) * (rScale(d.data.performance) + labelOffset))
-      .attr('y', d => Math.sin((d.startAngle+d.endAngle)/2 - Math.PI/2) * (rScale(d.data.performance) + labelOffset))
-      .attr('text-anchor', d => ((d.startAngle+d.endAngle)/2) > Math.PI ? 'end' : 'start')
-      .text(d => d.data.label);
+      .attr('x', d => Math.cos((d.startAngle + d.endAngle) / 2 - Math.PI/2) * (rScale(d.data.performance) + labelOffset))
+      .attr('y', d => Math.sin((d.startAngle + d.endAngle) / 2 - Math.PI/2) * (rScale(d.data.performance) + labelOffset))
+      .attr('text-anchor', d => ((d.startAngle + d.endAngle) / 2) > Math.PI ? 'end' : 'start')
+      .text(d => d.data.label)
+      .attr('font-size', '12px')
+      .attr('fill', '#333');
 
-    // LEGEND
-    const legendG = svg.append('g').attr('class','legend')
-      .attr('transform', `translate(${margin}, ${margin})`);
-    const legendItems = legendG.selectAll('.legend-item')
-      .data(pts).enter().append('g').attr('class','legend-item')
-      .attr('transform', (d,i) => `translate(0, ${i * 18})`);
-    legendItems.append('rect')
-      .attr('width', 16).attr('height', 16)
-      .style('fill', d => colorScale(d.label));
-    legendItems.append('text')
-      .attr('x', 16).attr('y', 6).attr('dy', '0.35em')
-      .text(d => d.label)
-      .style('font-sizel', 16);
+    const legendG = svg.append('g').attr('class', 'legend').attr('transform', `translate(${margin},${margin})`);
+    legendG.selectAll('.legend-item')
+      .data(pts).enter().append('g')
+      .attr('class', 'legend-item')
+      .attr('transform', (d,i) => `translate(0, ${i * 18})`)
+      .call(g => {
+        g.append('rect')
+         .attr('width', 16).attr('height', 16)
+         .style('fill', d => colorScale(d.label));
+        g.append('text')
+         .attr('x', 20).attr('y', 8)
+         .attr('dy', '0.35em')
+         .attr('font-size', '10px')
+         .text(d => d.label);
+      });
 
     done();
   }
 });
+
