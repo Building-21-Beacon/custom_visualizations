@@ -127,6 +127,14 @@ looker.plugins.visualizations.add({
       .style('stroke-width', 2)
       .style('opacity', 0.5);
 
+    chart.append('text')
+      .attr('x', 0)
+      .attr('y', -rScale(target) - 10)       // 10px above the ring
+      .attr('text-anchor', 'middle')
+      .attr('font-size', '12px')
+      .attr('fill', '#5D8BF4')
+      .text(`Target: ${target}`);
+
     const labelOffset = 20;
     chart.selectAll('.label')
       .data(arcs).enter().append('text')
@@ -135,7 +143,7 @@ looker.plugins.visualizations.add({
       .attr('text-anchor', d => ((d.startAngle + d.endAngle) / 2) > Math.PI ? 'end' : 'start')
       .text(d => d.data.label)
       .attr('font-size', '16px')
-      .attr('font-weight','bold')
+      .attr('font-weight','normal')
       .attr('font-family', 'Poppins')
       .attr('fill', '#333');
 
